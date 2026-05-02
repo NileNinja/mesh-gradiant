@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>MeshStudio — Stripe Gradient Engine</title>
+  <meta name="description" content="Professional mesh gradient tool inspired by Stripe's animation engine. Full 3D displacement, twist, glow, and 10+ presets."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    .toast {
+      position: fixed; bottom: 48px; left: 50%; transform: translateX(-50%);
+      background: #22223a; border: 1px solid #363660; border-radius: 6px;
+      color: #e2e2ee; font-size: 12px; font-family: Inter, sans-serif;
+      padding: 8px 16px; z-index: 9999;
+      transition: opacity 0.4s ease; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
+<header class="toolbar">
+  <div class="toolbar-left">
+    <div class="app-logo">
+      <span class="app-logo-icon">✦</span>
+      <span>MeshStudio</span>
+    </div>
+
+    <button id="btn-play-pause"  class="toolbar-btn">⏸ Pause</button>
+    <button id="btn-randomize"   class="toolbar-btn">🎲 Random</button>
+    <button id="btn-save-preset" class="toolbar-btn toolbar-btn--star" title="Save current state as a preset (S)">⭐ Save</button>
+  </div>
+
+  <!-- Preset picker -->
+  <div class="toolbar-center">
+    <div class="preset-selector">
+      <button id="preset-btn" class="preset-btn">
+        <span id="preset-name">🌈&nbsp; Stripe Classic</span>
+        <span class="chevron">▾</span>
+      </button>
+      <div id="preset-dropdown" class="preset-dropdown"></div>
+    </div>
+  </div>
+
+  <div class="toolbar-right">
+    <button id="btn-copy-state" class="toolbar-btn">🔗 Copy Link</button>
+    <button id="btn-export-css" class="toolbar-btn">{ } CSS</button>
+    <button id="btn-record"     class="toolbar-btn">⏺ Record</button>
+    <button id="btn-export-png" class="toolbar-btn primary">↓ Export PNG</button>
+    <button id="btn-panel-toggle" class="toolbar-btn" title="Toggle panel (T)">☰</button>
+  </div>
+</header>
+
+<!-- ── Main layout ─────────────────────────────────────────────────────── -->
+<main class="app-main">
+
+  <!-- Canvas viewport -->
+  <div class="canvas-viewport">
+    <div class="canvas-wrapper">
+      <canvas id="gradient-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Control panel sidebar -->
+  <aside class="panel-sidebar">
+    <div id="ctrl-panel-root"></div>
+  </aside>
+
+</main>
+
+<!-- ── Status bar ──────────────────────────────────────────────────────── -->
+<footer class="statusbar">
+  <span id="status-fps" class="statusbar-fps">-- fps</span>
+  <span class="statusbar-sep">·</span>
+  <span id="status-size">1200 × 675</span>
+  <span class="statusbar-sep">·</span>
+  <span id="status-mesh">Mesh 128²</span>
+  <span class="statusbar-sep">·</span>
+  <span>Space = Play/Pause</span>
+  <span class="statusbar-sep">·</span>
+  <span>P = PNG</span>
+  <span class="statusbar-sep">·</span>
+  <span>R = Record</span>
+  <span class="statusbar-sep">·</span>
+  <span>T = Panel</span>
+  <span class="statusbar-sep">·</span>
+  <span>W = Wireframe</span>
+</footer>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
