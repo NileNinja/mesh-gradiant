@@ -1,4 +1,4 @@
-import type { GradientState } from './GradientState';
+import type { GradientState, ColorStop } from './GradientState';
 
 export interface Preset {
   name: string;
@@ -7,47 +7,52 @@ export interface Preset {
   state: GradientState;
 }
 
-// ── Shared canvas / quality defaults ────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function stops(...hexes: string[]): ColorStop[] {
+  return hexes.map(hex => ({ hex, alpha: 1 }));
+}
+
 const BASE: Partial<GradientState> = {
   canvasWidth: 1200, canvasHeight: 675,
   cameraFov: 45, cameraDist: 600,
   speed: 1, paused: false, meshDetail: 80, wireframe: false,
   vignette: 0, targetFps: 30, dpr: 1, bgColor: '#0a0a14',
+  renderMode: 'waves', material: 'standard',
+  motionMode: 'flow', motionIntensity: 0.5,
+  iridescence: 0, chromaticAberration: 0, refraction: 0,
+  seed: 0, reducedMotion: false,
 };
 
-// ── Helper: make a full state from a partial ─────────────────────────────────
 function mk(p: Partial<GradientState>): GradientState {
   return { ...BASE, ...p } as GradientState;
 }
 
+// ── 10 original presets ───────────────────────────────────────────────────────
+
 export const PRESETS: Preset[] = [
-  // ── 1. Stripe Classic ── smooth flowing Stripe.com gradient ───────────────
   {
-    name: 'Stripe Classic',
-    emoji: '🌈',
+    name: 'Stripe Classic', emoji: '🌈',
     description: 'The original Stripe homepage gradient — blue, coral, pink, cyan',
     state: mk({
-      colors: ['#0048e5', '#ff6030', '#e040fb', '#00c8e8', '#ffffff'],
-      positionX: 0, positionY: 0, positionZ: 0,
-      scaleX: 8.0, scaleY: 4.0, scaleZ: 8.0,
-      rotationX: -0.35, rotationY: -0.08, rotationZ: 0.5,
-      displaceFreqX: 0.0045, displaceFreqZ: 0.009, displaceAmount: -8.0,
-      // Gentle twist — creates flowing ribbon motion without hard edges
-      twistFreqX: -0.35, twistFreqY: 0.2,  twistFreqZ: -0.3,
-      twistPowX:  1.5,   twistPowY: 0.4,   twistPowZ:  1.5,
-      colorContrast: 1.0, colorSaturation: 1.1, colorHueShift: -0.1,
-      glowAmount: 1.5, glowPower: 0.6, glowRamp: 0.7,
-      blur: 0.01, grain: 0.8, bgColor: '#060820',
+      colors: stops('#0048e5','#ff6030','#e040fb','#00c8e8','#ffffff'),
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:8.0, scaleY:4.0, scaleZ:8.0,
+      rotationX:-0.35, rotationY:-0.08, rotationZ:0.5,
+      displaceFreqX:0.0045, displaceFreqZ:0.009, displaceAmount:-8.0,
+      twistFreqX:-0.35, twistFreqY:0.2,  twistFreqZ:-0.3,
+      twistPowX: 1.5,   twistPowY:0.4,   twistPowZ: 1.5,
+      colorContrast:1.0, colorSaturation:1.1, colorHueShift:-0.1,
+      glowAmount:1.5, glowPower:0.6, glowRamp:0.7,
+      blur:0.01, grain:0.8, bgColor:'#060820',
+      motionMode:'flow',
     }),
   },
-
-  // ── 2. Stripe Midnight ── dark, electric blue/violet ─────────────────────
   {
-    name: 'Midnight',
-    emoji: '🌑',
+    name: 'Midnight', emoji: '🌑',
     description: 'Dark navy canvas · electric blue, indigo, deep violet',
     state: mk({
-      colors: ['#0d0d20', '#1a237e', '#3d5afe', '#7c4dff', '#b39ddb'],
+      colors: stops('#0d0d20','#1a237e','#3d5afe','#7c4dff','#b39ddb'),
       positionX:0, positionY:-30, positionZ:0,
       scaleX:6.5, scaleY:9.0, scaleZ:5.5,
       rotationX:-0.50, rotationY:0.08, rotationZ:1.92,
@@ -55,18 +60,16 @@ export const PRESETS: Preset[] = [
       twistFreqX:-0.70, twistFreqY:0.35, twistFreqZ:-0.62,
       twistPowX:4.0,    twistPowY:0.8,   twistPowZ:3.5,
       colorContrast:1.2, colorSaturation:1.4, colorHueShift:0.0,
-      glowAmount:2.8,  glowPower:0.72, glowRamp:0.9,
+      glowAmount:2.8, glowPower:0.72, glowRamp:0.9,
       blur:0.0, grain:0.9, vignette:0.55,
+      motionMode:'drift',
     }),
   },
-
-  // ── 3. Aurora Borealis ─────────────────────────────────────────────────────
   {
-    name: 'Aurora',
-    emoji: '🌌',
+    name: 'Aurora', emoji: '🌌',
     description: 'Dark · emerald green, teal, violet northern lights',
     state: mk({
-      colors: ['#0a1628', '#00695c', '#00e5ff', '#7c4dff', '#e0f7fa'],
+      colors: stops('#0a1628','#00695c','#00e5ff','#7c4dff','#e0f7fa'),
       positionX:0, positionY:20, positionZ:0,
       scaleX:8.0, scaleY:7.0, scaleZ:7.0,
       rotationX:-0.38, rotationY:0.15, rotationZ:1.75,
@@ -76,16 +79,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.1, colorSaturation:1.3, colorHueShift:0.05,
       glowAmount:2.2, glowPower:0.78, glowRamp:0.85,
       blur:0.0, grain:0.75, vignette:0.65,
+      motionMode:'aurora',
     }),
   },
-
-  // ── 4. Sunset ─────────────────────────────────────────────────────────────
   {
-    name: 'Sunset',
-    emoji: '🌅',
+    name: 'Sunset', emoji: '🌅',
     description: 'Warm dusk · deep orange, magenta, amber, gold',
     state: mk({
-      colors: ['#1a0510', '#b71c1c', '#ff6d00', '#ffd600', '#ffecb3'],
+      colors: stops('#1a0510','#b71c1c','#ff6d00','#ffd600','#ffecb3'),
       positionX:0, positionY:-10, positionZ:0,
       scaleX:7.5, scaleY:8.5, scaleZ:6.0,
       rotationX:-0.42, rotationY:-0.20, rotationZ:1.80,
@@ -95,16 +96,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.15, colorSaturation:1.25, colorHueShift:0.02,
       glowAmount:2.1, glowPower:0.82, glowRamp:0.80,
       blur:0.03, grain:0.9, vignette:0.4,
+      motionMode:'flow',
     }),
   },
-
-  // ── 5. Ocean ──────────────────────────────────────────────────────────────
   {
-    name: 'Ocean',
-    emoji: '🌊',
+    name: 'Ocean', emoji: '🌊',
     description: 'Deep sea · cobalt, cerulean, aquamarine, white foam',
     state: mk({
-      colors: ['#01579b', '#0288d1', '#00bcd4', '#80deea', '#ffffff'],
+      colors: stops('#01579b','#0288d1','#00bcd4','#80deea','#ffffff'),
       positionX:0, positionY:10, positionZ:0,
       scaleX:6.0, scaleY:9.5, scaleZ:5.0,
       rotationX:-0.52, rotationY:-0.05, rotationZ:1.95,
@@ -114,16 +113,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.0, colorSaturation:1.2, colorHueShift:0.0,
       glowAmount:1.5, glowPower:0.85, glowRamp:0.78,
       blur:0.04, grain:0.65, vignette:0.5,
+      motionMode:'ripple',
     }),
   },
-
-  // ── 6. Nebula ─────────────────────────────────────────────────────────────
   {
-    name: 'Nebula',
-    emoji: '🔮',
+    name: 'Nebula', emoji: '🔮',
     description: 'Deep space · purple, magenta, blue cosmic dust',
     state: mk({
-      colors: ['#0d0010', '#4a148c', '#e91e63', '#3f51b5', '#ff80ab'],
+      colors: stops('#0d0010','#4a148c','#e91e63','#3f51b5','#ff80ab'),
       positionX:0, positionY:0, positionZ:0,
       scaleX:8.5, scaleY:7.5, scaleZ:7.5,
       rotationX:-0.40, rotationY:0.12, rotationZ:2.10,
@@ -133,16 +130,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.3, colorSaturation:1.5, colorHueShift:-0.08,
       glowAmount:3.2, glowPower:0.70, glowRamp:0.92,
       blur:0.0, grain:1.2, vignette:0.80,
+      motionMode:'swirl',
     }),
   },
-
-  // ── 7. Neon Cyber ─────────────────────────────────────────────────────────
   {
-    name: 'Neon Cyber',
-    emoji: '⚡',
+    name: 'Neon Cyber', emoji: '⚡',
     description: 'Cyberpunk · electric cyan, hot magenta, acid green',
     state: mk({
-      colors: ['#050010', '#00e5ff', '#ff00ff', '#76ff03', '#ffffff'],
+      colors: stops('#050010','#00e5ff','#ff00ff','#76ff03','#ffffff'),
       positionX:0, positionY:0, positionZ:0,
       scaleX:9.0, scaleY:6.0, scaleZ:8.0,
       rotationX:-0.35, rotationY:0.22, rotationZ:1.65,
@@ -152,16 +147,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.4, colorSaturation:1.8, colorHueShift:0.0,
       glowAmount:4.0, glowPower:0.65, glowRamp:0.95,
       blur:0.0, grain:0.6, vignette:1.0,
+      motionMode:'pulse',
     }),
   },
-
-  // ── 8. Peach Blossom ── light, airy, feminine ─────────────────────────────
   {
-    name: 'Peach Blossom',
-    emoji: '🌸',
+    name: 'Peach Blossom', emoji: '🌸',
     description: 'Soft light · blush pink, peach, lavender, ivory',
     state: mk({
-      colors: ['#fce4ec', '#f48fb1', '#ce93d8', '#ffcc80', '#ffffff'],
+      colors: stops('#fce4ec','#f48fb1','#ce93d8','#ffcc80','#ffffff'),
       positionX:0, positionY:20, positionZ:0,
       scaleX:5.5, scaleY:7.0, scaleZ:5.0,
       rotationX:-0.35, rotationY:-0.08, rotationZ:1.70,
@@ -171,16 +164,14 @@ export const PRESETS: Preset[] = [
       colorContrast:0.9, colorSaturation:0.85, colorHueShift:0.0,
       glowAmount:1.0, glowPower:0.9, glowRamp:0.7,
       blur:0.05, grain:0.4, vignette:0.0,
+      motionMode:'breathe',
     }),
   },
-
-  // ── 9. Emerald Forest ─────────────────────────────────────────────────────
   {
-    name: 'Forest',
-    emoji: '🌿',
+    name: 'Forest', emoji: '🌿',
     description: 'Organic · deep forest green, moss, amber earth tones',
     state: mk({
-      colors: ['#1b2510', '#2e7d32', '#66bb6a', '#ff8f00', '#fff9c4'],
+      colors: stops('#1b2510','#2e7d32','#66bb6a','#ff8f00','#fff9c4'),
       positionX:0, positionY:-5, positionZ:0,
       scaleX:6.8, scaleY:8.2, scaleZ:6.2,
       rotationX:-0.48, rotationY:-0.15, rotationZ:1.82,
@@ -190,16 +181,14 @@ export const PRESETS: Preset[] = [
       colorContrast:1.05, colorSaturation:1.1, colorHueShift:0.03,
       glowAmount:1.2, glowPower:0.88, glowRamp:0.75,
       blur:0.02, grain:0.8, vignette:0.45,
+      motionMode:'drift',
     }),
   },
-
-  // ── 10. Retro Gold ────────────────────────────────────────────────────────
   {
-    name: 'Retro Gold',
-    emoji: '🏆',
+    name: 'Retro Gold', emoji: '🏆',
     description: 'Luxe warm · deep burgundy, gold, amber, cream',
     state: mk({
-      colors: ['#1a0505', '#880e4f', '#e65100', '#ffd600', '#fff8e1'],
+      colors: stops('#1a0505','#880e4f','#e65100','#ffd600','#fff8e1'),
       positionX:0, positionY:0, positionZ:0,
       scaleX:7.0, scaleY:8.0, scaleZ:6.5,
       rotationX:-0.43, rotationY:-0.10, rotationZ:1.90,
@@ -209,6 +198,195 @@ export const PRESETS: Preset[] = [
       colorContrast:1.1, colorSaturation:1.15, colorHueShift:0.05,
       glowAmount:2.0, glowPower:0.80, glowRamp:0.82,
       blur:0.02, grain:0.95, vignette:0.35,
+      motionMode:'flow',
+    }),
+  },
+
+  // ── 10 new presets — leverage renderMode, material, motionMode ────────────
+
+  {
+    name: 'Stripe Hero', emoji: '✦',
+    description: 'Newest Stripe hero — soft blobs, smooth flow',
+    state: mk({
+      colors: stops('#0048e5','#7b2fff','#ff6030','#00c8e8','#e040fb','#ffffff'),
+      renderMode: 'blobs', material: 'standard', motionMode: 'flow',
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:7.0, scaleY:5.0, scaleZ:7.0,
+      rotationX:-0.3, rotationY:0.0, rotationZ:0.0,
+      displaceFreqX:0.006, displaceFreqZ:0.014, displaceAmount:-7.0,
+      twistFreqX:-0.4, twistFreqY:0.25, twistFreqZ:-0.35,
+      twistPowX:2.0, twistPowY:0.5, twistPowZ:2.0,
+      colorContrast:1.0, colorSaturation:1.15, colorHueShift:-0.05,
+      glowAmount:1.8, glowPower:0.7, glowRamp:0.75,
+      blur:0.01, grain:0.6, vignette:0.0, bgColor:'#05051a',
+      speed:0.9,
+    }),
+  },
+  {
+    name: 'Liquid Glass', emoji: '🫧',
+    description: 'Blobs + glass refraction + chromatic aberration',
+    state: mk({
+      colors: stops('#e8f4f8','#b2dfdb','#80cbc4','#4db6ac','#26a69a'),
+      renderMode: 'blobs', material: 'glass', motionMode: 'drift',
+      chromaticAberration: 1.2, refraction: 0.6,
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:6.0, scaleY:5.0, scaleZ:6.0,
+      rotationX:-0.2, rotationY:0.1, rotationZ:0.3,
+      displaceFreqX:0.004, displaceFreqZ:0.009, displaceAmount:-6.0,
+      twistFreqX:-0.25, twistFreqY:0.15, twistFreqZ:-0.2,
+      twistPowX:1.2, twistPowY:0.3, twistPowZ:1.2,
+      colorContrast:0.9, colorSaturation:0.8, colorHueShift:0.0,
+      glowAmount:1.2, glowPower:0.82, glowRamp:0.7,
+      blur:0.0, grain:0.3, vignette:0.0, bgColor:'#f0f8ff',
+      speed:0.4,
+    }),
+  },
+  {
+    name: 'Iridescent Pearl', emoji: '🪩',
+    description: 'Holographic waves with shifting rainbow sheen',
+    state: mk({
+      colors: stops('#f8f0ff','#e8d5f5','#dcc5f5','#c9b5f0','#b8a5ef'),
+      renderMode: 'waves', material: 'iridescent', motionMode: 'breathe',
+      iridescence: 0.8,
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:6.5, scaleY:7.0, scaleZ:6.5,
+      rotationX:-0.4, rotationY:-0.05, rotationZ:1.8,
+      displaceFreqX:0.005, displaceFreqZ:0.012, displaceAmount:-9.0,
+      twistFreqX:-0.4, twistFreqY:0.25, twistFreqZ:-0.35,
+      twistPowX:2.2, twistPowY:0.5, twistPowZ:2.2,
+      colorContrast:0.95, colorSaturation:0.7, colorHueShift:0.0,
+      glowAmount:1.5, glowPower:0.85, glowRamp:0.8,
+      blur:0.02, grain:0.3, vignette:0.0, bgColor:'#f5f0ff',
+      speed:0.5,
+    }),
+  },
+  {
+    name: 'Plasma Storm', emoji: '⚡',
+    description: 'High-frequency turbulence, electric plasma tendrils',
+    state: mk({
+      colors: stops('#0a0020','#6200ea','#aa00ff','#e040fb','#ff80ab'),
+      renderMode: 'waves', material: 'plasma', motionMode: 'swirl',
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:9.0, scaleY:8.0, scaleZ:8.0,
+      rotationX:-0.38, rotationY:0.15, rotationZ:2.0,
+      displaceFreqX:0.009, displaceFreqZ:0.022, displaceAmount:-7.0,
+      twistFreqX:-0.9, twistFreqY:0.65, twistFreqZ:-0.8,
+      twistPowX:4.5, twistPowY:1.5, twistPowZ:4.5,
+      colorContrast:1.4, colorSaturation:1.8, colorHueShift:-0.05,
+      glowAmount:4.5, glowPower:0.62, glowRamp:0.95,
+      blur:0.0, grain:0.8, vignette:0.9, bgColor:'#050010',
+      speed:1.4,
+    }),
+  },
+  {
+    name: 'Aurora Borealis', emoji: '🌠',
+    description: 'Vertical light bands, hybrid mesh + iridescent',
+    state: mk({
+      colors: stops('#000d14','#00695c','#00acc1','#7c4dff','#e0f7fa','#b9f6ca'),
+      renderMode: 'hybrid', material: 'iridescent', motionMode: 'aurora',
+      iridescence: 0.4,
+      positionX:0, positionY:30, positionZ:0,
+      scaleX:8.0, scaleY:6.0, scaleZ:8.0,
+      rotationX:-0.3, rotationY:0.12, rotationZ:1.7,
+      displaceFreqX:0.005, displaceFreqZ:0.012, displaceAmount:-10.0,
+      twistFreqX:-0.45, twistFreqY:0.6, twistFreqZ:-0.4,
+      twistPowX:2.8, twistPowY:1.5, twistPowZ:2.8,
+      colorContrast:1.1, colorSaturation:1.3, colorHueShift:0.05,
+      glowAmount:2.5, glowPower:0.75, glowRamp:0.88,
+      blur:0.0, grain:0.7, vignette:0.7, bgColor:'#000d14',
+      speed:0.7,
+    }),
+  },
+  {
+    name: 'Silk Calm', emoji: '🎋',
+    description: 'Serene directional sheen — perfect light hero',
+    state: mk({
+      colors: stops('#fff9f0','#ffe0b2','#ffccbc','#f8bbd0','#fce4ec'),
+      renderMode: 'waves', material: 'silk', motionMode: 'breathe',
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:6.0, scaleY:8.0, scaleZ:6.0,
+      rotationX:-0.32, rotationY:-0.06, rotationZ:1.6,
+      displaceFreqX:0.004, displaceFreqZ:0.009, displaceAmount:-7.0,
+      twistFreqX:-0.32, twistFreqY:0.18, twistFreqZ:-0.28,
+      twistPowX:1.6, twistPowY:0.4, twistPowZ:1.6,
+      colorContrast:0.85, colorSaturation:0.75, colorHueShift:0.0,
+      glowAmount:0.8, glowPower:0.92, glowRamp:0.65,
+      blur:0.04, grain:0.2, vignette:0.0, bgColor:'#fffdf9',
+      speed:0.4,
+    }),
+  },
+  {
+    name: 'Neon Pulse', emoji: '💜',
+    description: 'Pulsing neon blobs — electric dark hero',
+    state: mk({
+      colors: stops('#050010','#00e5ff','#7c4dff','#ff00ff','#ff6d00'),
+      renderMode: 'blobs', material: 'plasma', motionMode: 'pulse',
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:7.0, scaleY:5.0, scaleZ:7.0,
+      rotationX:-0.3, rotationY:0.05, rotationZ:0.0,
+      displaceFreqX:0.007, displaceFreqZ:0.016, displaceAmount:-7.5,
+      twistFreqX:-0.55, twistFreqY:0.35, twistFreqZ:-0.5,
+      twistPowX:2.8, twistPowY:0.8, twistPowZ:2.8,
+      colorContrast:1.3, colorSaturation:1.7, colorHueShift:0.0,
+      glowAmount:4.0, glowPower:0.65, glowRamp:0.92,
+      blur:0.0, grain:0.5, vignette:1.0, bgColor:'#050010',
+      speed:1.0,
+    }),
+  },
+  {
+    name: 'Glass Bubbles', emoji: '🫧',
+    description: 'Rippling glass blobs with rainbow chromatic fringe',
+    state: mk({
+      colors: stops('#e8eaf6','#c5cae9','#9fa8da','#7986cb','#5c6bc0'),
+      renderMode: 'blobs', material: 'glass', motionMode: 'ripple',
+      chromaticAberration: 1.8, refraction: 0.8,
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:5.5, scaleY:4.5, scaleZ:5.5,
+      rotationX:-0.2, rotationY:0.05, rotationZ:0.2,
+      displaceFreqX:0.004, displaceFreqZ:0.01, displaceAmount:-5.5,
+      twistFreqX:-0.3, twistFreqY:0.18, twistFreqZ:-0.25,
+      twistPowX:1.5, twistPowY:0.4, twistPowZ:1.5,
+      colorContrast:0.9, colorSaturation:0.85, colorHueShift:0.0,
+      glowAmount:1.0, glowPower:0.88, glowRamp:0.72,
+      blur:0.0, grain:0.2, vignette:0.0, bgColor:'#f5f7ff',
+      speed:1.2,
+    }),
+  },
+  {
+    name: 'Holographic', emoji: '🌈',
+    description: 'Full-spectrum iridescence — max rainbow sheen',
+    state: mk({
+      colors: stops('#1a0030','#3d0070','#6200ea','#aa00ff','#e040fb','#ff80ab'),
+      renderMode: 'hybrid', material: 'iridescent', motionMode: 'flow',
+      iridescence: 1.0,
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:8.0, scaleY:7.0, scaleZ:8.0,
+      rotationX:-0.42, rotationY:0.1, rotationZ:1.9,
+      displaceFreqX:0.007, displaceFreqZ:0.018, displaceAmount:-8.5,
+      twistFreqX:-0.7, twistFreqY:0.5, twistFreqZ:-0.65,
+      twistPowX:4.0, twistPowY:1.0, twistPowZ:4.0,
+      colorContrast:1.2, colorSaturation:1.5, colorHueShift:-0.1,
+      glowAmount:3.0, glowPower:0.72, glowRamp:0.9,
+      blur:0.0, grain:0.8, vignette:0.6, bgColor:'#0a0015',
+      speed:0.8,
+    }),
+  },
+  {
+    name: 'Cosmic Drift', emoji: '🌌',
+    description: 'Deep-space plasma blobs drifting through nebula',
+    state: mk({
+      colors: stops('#050010','#1a0040','#4a0080','#7c4dff','#e040fb','#ff80ab'),
+      renderMode: 'blobs', material: 'plasma', motionMode: 'drift',
+      positionX:0, positionY:0, positionZ:0,
+      scaleX:8.0, scaleY:6.0, scaleZ:8.0,
+      rotationX:-0.35, rotationY:0.08, rotationZ:0.5,
+      displaceFreqX:0.005, displaceFreqZ:0.012, displaceAmount:-9.0,
+      twistFreqX:-0.4, twistFreqY:0.25, twistFreqZ:-0.35,
+      twistPowX:2.0, twistPowY:0.5, twistPowZ:2.0,
+      colorContrast:1.25, colorSaturation:1.5, colorHueShift:-0.05,
+      glowAmount:3.5, glowPower:0.68, glowRamp:0.92,
+      blur:0.0, grain:1.0, vignette:0.85, bgColor:'#050010',
+      speed:0.35,
     }),
   },
 ];

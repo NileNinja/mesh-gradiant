@@ -1,22 +1,8 @@
-/**
- * ControlPanel — Full parameter UI matching the original Stripe gradient tool.
- *
- * Sections:
- *  ① Canvas Size — width, height, aspect presets
- *  ② Colors — 2-6 color pickers with add/remove
- *  ③ Mesh Transform — position X/Y/Z, scale X/Y/Z, rotation X/Y/Z
- *  ④ Displacement — freqX, freqZ, amount
- *  ⑤ Twist — freqX/Y/Z, powX/Y/Z
- *  ⑥ Color Adjust — contrast, saturation, hue shift
- *  ⑦ Glow — amount, power, ramp
- *  ⑧ Post — blur, grain, vignette
- *  ⑨ Camera — fov, distance
- *  ⑩ Animation — speed, pause
- *  ⑪ Quality — mesh detail, wireframe
- */
-
-import type { GradientState } from '../state/GradientState';
+import type { GradientState, RenderMode, Material, MotionMode } from '../state/GradientState';
 import type { GradientEngine } from '../engine/GradientEngine';
+import { ColorList } from './ColorList';
+import { MOTION_MODES, MOTION_MODE_LABELS } from '../state/motionModes';
+import { patch } from '../state/observers';
 
 export class ControlPanel {
   private root: HTMLElement;
@@ -24,7 +10,7 @@ export class ControlPanel {
   private onChange: () => void;
 
   constructor(container: HTMLElement, engine: GradientEngine, onChange: () => void) {
-    this.engine = engine;
+    this.engine   = engine;
     this.onChange = onChange;
     this.root = document.createElement('div');
     this.root.className = 'ctrl-panel';
@@ -35,20 +21,16 @@ export class ControlPanel {
   private get s(): GradientState { return this.engine.state; }
 
   render() {
-    this.root.innerHTML = '';
+    this.root.textContent = '';
     const body = this.root;
     const s = this.s;
+    const ch = () => { this.engine.markDirty(); this.onChange(); };
 
-    // ── ① Canvas Size ─────────────────────────────────────────────────────
+    // ── ① Canvas Size ──────────────────────────────────────────────────────
     const canvasSec = section(body, '📐 Canvas Size');
     const sizeRow = row(canvasSec);
-    const cwIn = numInput(sizeRow, 'W', s.canvasWidth, 200, 7680, 10, v => {
-      s.canvasWidth = v; this.engine.resize(); this.onChange();
-    });
-    const chIn = numInput(sizeRow, 'H', s.canvasHeight, 200, 4320, 10, v => {
-      s.canvasHeight = v; this.engine.resize(); this.onChange();
-    });
-    void cwIn; void chIn;
+    numInput(sizeRow, 'W', s.canvasWidth,  200, 7680, 10, v => { s.canvasWidth  = v; this.engine.resize(); ch(); });
+    numInput(sizeRow, 'H', s.canvasHeight, 200, 4320, 10, v => { s.canvasHeight = v; this.engine.resize(); ch(); });
 
     const aspectRow = el('div', 'ctrl-aspect-row');
     const aspects: [string, number, number][] = [
@@ -58,157 +40,150 @@ export class ControlPanel {
       const btn = el('button', 'ctrl-tag-btn');
       btn.textContent = lbl;
       btn.onclick = () => {
-        const scale = 1200 / w;
-        s.canvasWidth  = Math.round(w * scale);
-        s.canvasHeight = Math.round(h * scale);
-        this.engine.resize(); this.render(); this.onChange();
+        const sc = 1200 / w;
+        s.canvasWidth  = Math.round(w * sc);
+        s.canvasHeight = Math.round(h * sc);
+        this.engine.resize(); this.render(); ch();
       };
       aspectRow.appendChild(btn);
     }
     canvasSec.appendChild(aspectRow);
 
     // ── ② Colors ──────────────────────────────────────────────────────────
-    const colorSec = section(body, `🎨 Colors (${s.colors.length}/6)`);
-    for (let ci = 0; ci < s.colors.length; ci++) {
-      const i = ci;
-      const cr = el('div', 'ctrl-color-row');
-      const swatch = el('div', 'ctrl-color-swatch');
-      swatch.style.background = s.colors[i];
-      const picker = document.createElement('input');
-      picker.type = 'color'; picker.className = 'ctrl-color-picker'; picker.value = s.colors[i];
-      picker.oninput = () => {
-        s.colors[i] = picker.value;
-        swatch.style.background = picker.value;
-        this.onChange();
-      };
-      const hexSpan = el('span', 'ctrl-color-hex');
-      hexSpan.textContent = s.colors[i];
-      picker.oninput = () => {
-        s.colors[i] = picker.value;
-        swatch.style.background = picker.value;
-        hexSpan.textContent = picker.value;
+    const colorSec = section(body, `🎨 Colors (${s.colors.length}/8)`);
+    const clRoot = el('div', 'ctrl-color-list');
+    colorSec.appendChild(clRoot);
+    new ColorList(clRoot, s.colors, ch);
+
+    // ── ③ Render Mode ─────────────────────────────────────────────────────
+    const renderSec = section(body, '🔷 Render Mode');
+    dropdown(renderSec, s.renderMode, [
+      ['waves',  '〰 Waves (mesh grid)'],
+      ['blobs',  '🫧 Blobs (SDF metaballs)'],
+      ['hybrid', '✦ Hybrid (waves + blobs)'],
+    ] as [RenderMode, string][], v => {
+      s.renderMode = v; ch();
+    });
+
+    // ── ④ Material ────────────────────────────────────────────────────────
+    const matSec = section(body, '✨ Material');
+    dropdown(matSec, s.material, [
+      ['standard',    '● Standard'],
+      ['iridescent',  '🌈 Iridescent'],
+      ['glass',       '🫧 Glass / Refraction'],
+      ['plasma',      '⚡ Plasma'],
+      ['silk',        '🎋 Silk'],
+    ] as [Material, string][], v => {
+      s.material = v; ch(); this.render(); // re-render to show/hide material sliders
+    });
+
+    if (s.material === 'iridescent') {
+      slider(matSec, 'Sheen', s.iridescence, 0, 1, 0.02, v => { s.iridescence = v; ch(); });
+    }
+    if (s.material === 'glass') {
+      slider(matSec, 'Refraction',  s.refraction,          0, 1, 0.02, v => { s.refraction = v; ch(); });
+      slider(matSec, 'Chrom. Ab.',  s.chromaticAberration, 0, 2, 0.05, v => { s.chromaticAberration = v; ch(); });
+    }
+
+    // ── ⑤ Motion Mode ─────────────────────────────────────────────────────
+    const motSec = section(body, '🎬 Motion');
+    const motionOptions = (Object.keys(MOTION_MODE_LABELS) as MotionMode[])
+      .map(k => [k, MOTION_MODE_LABELS[k]] as [MotionMode, string]);
+    dropdown(motSec, s.motionMode, motionOptions, v => {
+      if (v !== 'custom') {
+        patch(s, MOTION_MODES[v]);
         this.engine.markDirty();
         this.onChange();
-      };
-      const removeBtn = el('button', 'ctrl-color-remove') as HTMLButtonElement;
-      removeBtn.textContent = '×';
-      removeBtn.disabled = s.colors.length <= 2;
-      removeBtn.onclick = () => {
-        if (s.colors.length > 2) { s.colors.splice(i, 1); this.render(); this.onChange(); }
-      };
-      cr.appendChild(swatch); cr.appendChild(picker); cr.appendChild(hexSpan); cr.appendChild(removeBtn);
-      colorSec.appendChild(cr);
-    }
-    if (s.colors.length < 6) {
-      const addBtn = el('button', 'ctrl-add-btn');
-      addBtn.textContent = '+ Add Color';
-      addBtn.onclick = () => {
-        const h = (s.colors.length * 60) % 360;
-        s.colors.push(hsl2hex(h, 80, 60));
-        this.render(); this.onChange();
-      };
-      colorSec.appendChild(addBtn);
-    }
+        this.render();
+      } else {
+        s.motionMode = 'custom'; ch();
+      }
+    });
+    slider(motSec, 'Intensity', s.motionIntensity, 0, 1, 0.02, v => { s.motionIntensity = v; ch(); });
+    slider(motSec, 'Speed',     s.speed,           0, 4, 0.05, v => { s.speed = v; ch(); });
 
-    // ── ③ Mesh Transform ──────────────────────────────────────────────────
+    // ── ⑥ Mesh Transform ──────────────────────────────────────────────────
     const xformSec = section(body, '🔲 Mesh Transform');
     const xformGrid = el('div', 'ctrl-grid-3');
-
-    slider(xformGrid, 'Pos X', s.positionX, -400, 400, 1,  v => { s.positionX=v; this.onChange(); });
-    slider(xformGrid, 'Pos Y', s.positionY, -300, 300, 1,  v => { s.positionY=v; this.onChange(); });
-    slider(xformGrid, 'Pos Z', s.positionZ, -300, 300, 1,  v => { s.positionZ=v; this.onChange(); });
-
-    slider(xformGrid, 'Scale X', s.scaleX, 0.5, 20, 0.1, v => { s.scaleX=v; this.onChange(); });
-    slider(xformGrid, 'Scale Y', s.scaleY, 0.5, 20, 0.1, v => { s.scaleY=v; this.onChange(); });
-    slider(xformGrid, 'Scale Z', s.scaleZ, 0.5, 20, 0.1, v => { s.scaleZ=v; this.onChange(); });
-
-    slider(xformGrid, 'Rot X', s.rotationX, -Math.PI, Math.PI, 0.01, v => { s.rotationX=v; this.onChange(); });
-    slider(xformGrid, 'Rot Y', s.rotationY, -Math.PI, Math.PI, 0.01, v => { s.rotationY=v; this.onChange(); });
-    slider(xformGrid, 'Rot Z', s.rotationZ, -Math.PI, Math.PI, 0.01, v => { s.rotationZ=v; this.onChange(); });
+    const setCustomMotion = () => { if (s.motionMode !== 'custom') s.motionMode = 'custom'; ch(); };
+    slider(xformGrid,'Pos X', s.positionX,-400,400,1,  v=>{s.positionX=v; ch();});
+    slider(xformGrid,'Pos Y', s.positionY,-300,300,1,  v=>{s.positionY=v; ch();});
+    slider(xformGrid,'Pos Z', s.positionZ,-300,300,1,  v=>{s.positionZ=v; ch();});
+    slider(xformGrid,'Scale X',s.scaleX, 0.5,20,0.1,  v=>{s.scaleX=v;  ch();});
+    slider(xformGrid,'Scale Y',s.scaleY, 0.5,20,0.1,  v=>{s.scaleY=v;  ch();});
+    slider(xformGrid,'Scale Z',s.scaleZ, 0.5,20,0.1,  v=>{s.scaleZ=v;  ch();});
+    slider(xformGrid,'Rot X',  s.rotationX,-Math.PI,Math.PI,0.01,v=>{s.rotationX=v; ch();});
+    slider(xformGrid,'Rot Y',  s.rotationY,-Math.PI,Math.PI,0.01,v=>{s.rotationY=v; ch();});
+    slider(xformGrid,'Rot Z',  s.rotationZ,-Math.PI,Math.PI,0.01,v=>{s.rotationZ=v; ch();});
+    void setCustomMotion; // available for future use by slider wrappers
     xformSec.appendChild(xformGrid);
 
-    // ── ④ Displacement ────────────────────────────────────────────────────
+    // ── ⑦ Displacement ────────────────────────────────────────────────────
     const dispSec = section(body, '〰 Displacement');
-    const D = (v: number) => { this.engine.markDirty(); this.onChange(); return v; };
-    slider(dispSec, 'Freq X', s.displaceFreqX, 0.0005, 0.05, 0.0005, v => { s.displaceFreqX=v; D(v); });
-    slider(dispSec, 'Freq Z', s.displaceFreqZ, 0.0005, 0.05, 0.0005, v => { s.displaceFreqZ=v; D(v); });
-    slider(dispSec, 'Amount', s.displaceAmount,-30, 30,  0.1,         v => { s.displaceAmount=v; D(v); });
+    slider(dispSec,'Freq X', s.displaceFreqX,0.0005,0.05,0.0005,v=>{s.displaceFreqX=v; setCustomMotion();});
+    slider(dispSec,'Freq Z', s.displaceFreqZ,0.0005,0.05,0.0005,v=>{s.displaceFreqZ=v; setCustomMotion();});
+    slider(dispSec,'Amount', s.displaceAmount,-30,30,0.1,v=>{s.displaceAmount=v; setCustomMotion();});
 
-    // ── ⑤ Twist ───────────────────────────────────────────────────────────
+    // ── ⑧ Twist ───────────────────────────────────────────────────────────
     const twistSec = section(body, '🌀 Twist');
     const twistGrid = el('div', 'ctrl-grid-3');
-    const T = (v: number) => { this.engine.markDirty(); this.onChange(); return v; };
-    slider(twistGrid, 'Freq X', s.twistFreqX, -3, 3, 0.01, v => { s.twistFreqX=v; T(v); });
-    slider(twistGrid, 'Freq Y', s.twistFreqY, -3, 3, 0.01, v => { s.twistFreqY=v; T(v); });
-    slider(twistGrid, 'Freq Z', s.twistFreqZ, -3, 3, 0.01, v => { s.twistFreqZ=v; T(v); });
-    slider(twistGrid, 'Pow X',  s.twistPowX,  0, 8, 0.05,  v => { s.twistPowX=v;  T(v); });
-    slider(twistGrid, 'Pow Y',  s.twistPowY,  0, 8, 0.05,  v => { s.twistPowY=v;  T(v); });
-    slider(twistGrid, 'Pow Z',  s.twistPowZ,  0, 8, 0.05,  v => { s.twistPowZ=v;  T(v); });
+    slider(twistGrid,'Freq X',s.twistFreqX,-3,3,0.01,v=>{s.twistFreqX=v; setCustomMotion();});
+    slider(twistGrid,'Freq Y',s.twistFreqY,-3,3,0.01,v=>{s.twistFreqY=v; setCustomMotion();});
+    slider(twistGrid,'Freq Z',s.twistFreqZ,-3,3,0.01,v=>{s.twistFreqZ=v; setCustomMotion();});
+    slider(twistGrid,'Pow X', s.twistPowX, 0,8,0.05, v=>{s.twistPowX=v;  setCustomMotion();});
+    slider(twistGrid,'Pow Y', s.twistPowY, 0,8,0.05, v=>{s.twistPowY=v;  setCustomMotion();});
+    slider(twistGrid,'Pow Z', s.twistPowZ, 0,8,0.05, v=>{s.twistPowZ=v;  setCustomMotion();});
     twistSec.appendChild(twistGrid);
 
-    // ── ⑥ Color Adjust ────────────────────────────────────────────────────
+    // ── ⑨ Color Adjust ────────────────────────────────────────────────────
     const adjSec = section(body, '🎛 Color Adjust');
-    slider(adjSec, 'Contrast',   s.colorContrast,   0.5, 3,  0.05, v => { s.colorContrast=v;   this.onChange(); });
-    slider(adjSec, 'Saturation', s.colorSaturation, 0,   2.5,0.05, v => { s.colorSaturation=v; this.onChange(); });
-    slider(adjSec, 'Hue Shift',  s.colorHueShift,  -0.5, 0.5,0.01, v => { s.colorHueShift=v;   this.onChange(); });
+    slider(adjSec,'Contrast',   s.colorContrast,   0.5,3,  0.05,v=>{s.colorContrast=v;   ch();});
+    slider(adjSec,'Saturation', s.colorSaturation, 0,  2.5,0.05,v=>{s.colorSaturation=v; ch();});
+    slider(adjSec,'Hue Shift',  s.colorHueShift,  -0.5,0.5,0.01,v=>{s.colorHueShift=v;   ch();});
 
-    // ── ⑦ Glow / Bloom ────────────────────────────────────────────────────
+    // ── ⑩ Glow / Bloom ────────────────────────────────────────────────────
     const glowSec = section(body, '✨ Glow');
-    slider(glowSec, 'Amount', s.glowAmount, 0, 6,   0.05, v => { s.glowAmount=v; this.onChange(); });
-    slider(glowSec, 'Power',  s.glowPower,  0, 1,   0.01, v => { s.glowPower=v;  this.onChange(); });
-    slider(glowSec, 'Ramp',   s.glowRamp,   0, 1,   0.01, v => { s.glowRamp=v;   this.onChange(); });
+    slider(glowSec,'Amount',s.glowAmount,0,6,  0.05,v=>{s.glowAmount=v; ch();});
+    slider(glowSec,'Power', s.glowPower, 0,1,  0.01,v=>{s.glowPower=v;  ch();});
+    slider(glowSec,'Ramp',  s.glowRamp,  0,1,  0.01,v=>{s.glowRamp=v;   ch();});
 
-    // ── ⑧ Post-Processing ─────────────────────────────────────────────────
+    // ── ⑪ Post ────────────────────────────────────────────────────────────
     const postSec = section(body, '🎞 Post');
-    slider(postSec, 'Blur',     s.blur,     0, 1,   0.01, v => { s.blur=v;     this.onChange(); });
-    slider(postSec, 'Grain',    s.grain,    0, 2.5, 0.05, v => { s.grain=v;    this.onChange(); });
-    slider(postSec, 'Vignette', s.vignette, 0, 1.5, 0.05, v => { s.vignette=v; this.onChange(); });
+    slider(postSec,'Blur',    s.blur,    0,1,  0.01,v=>{s.blur=v;     ch();});
+    slider(postSec,'Grain',   s.grain,   0,2.5,0.05,v=>{s.grain=v;    ch();});
+    slider(postSec,'Vignette',s.vignette,0,1.5,0.05,v=>{s.vignette=v; ch();});
 
-    // ── ⑨ Camera ──────────────────────────────────────────────────────────
+    // ── ⑫ Camera ──────────────────────────────────────────────────────────
     const camSec = section(body, '📷 Camera');
-    slider(camSec, 'FOV°',     s.cameraFov,  20, 90,   1,   v => { s.cameraFov=v;  this.onChange(); });
-    slider(camSec, 'Distance', s.cameraDist, 100, 1500, 10,  v => { s.cameraDist=v; this.onChange(); });
+    slider(camSec,'FOV°',    s.cameraFov, 20,90,  1,  v=>{s.cameraFov=v;  ch();});
+    slider(camSec,'Distance',s.cameraDist,100,1500,10, v=>{s.cameraDist=v; ch();});
 
-    // ── ⑩ Animation ───────────────────────────────────────────────────────
-    const animSec = section(body, '⏱ Animation');
-    slider(animSec, 'Speed', s.speed, 0, 4, 0.05, v => { s.speed=v; this.onChange(); });
-
-    // ── ⑪ Quality ─────────────────────────────────────────────────────────
+    // ── ⑬ Quality ─────────────────────────────────────────────────────────
     const qualSec = section(body, '⚙ Quality');
-    slider(qualSec, 'Mesh Detail', s.meshDetail, 32, 160, 16, v => {
+    slider(qualSec,'Mesh Detail',s.meshDetail,32,160,16,v=>{
       s.meshDetail = v;
       this.engine.applyState({ ...this.engine.state, meshDetail: v });
-      this.onChange();
+      ch();
     });
-    slider(qualSec, 'FPS Cap', s.targetFps, 10, 60, 5, v => {
-      s.targetFps = v; this.engine.markDirty(); this.onChange();
-    });
+    slider(qualSec,'FPS Cap',s.targetFps,10,60,5,v=>{s.targetFps=v; ch();});
+    slider(qualSec,'Seed',   s.seed,     0,99,1, v=>{s.seed=v;     ch();});
 
-    // Background Color
+    // Background color
     const bgRow = el('div', 'ctrl-color-row');
     const bgLabel = el('span', 'ctrl-slider-label'); bgLabel.textContent = 'Background';
     const bgSwatch = el('div', 'ctrl-color-swatch'); bgSwatch.style.background = s.bgColor;
     const bgPicker = document.createElement('input');
     bgPicker.type = 'color'; bgPicker.className = 'ctrl-color-picker'; bgPicker.value = s.bgColor;
-    bgPicker.oninput = () => {
-      s.bgColor = bgPicker.value;
-      bgSwatch.style.background = bgPicker.value;
-      this.engine.markDirty();
-      this.onChange();
-    };
+    bgPicker.oninput = () => { s.bgColor=bgPicker.value; bgSwatch.style.background=bgPicker.value; ch(); };
     bgRow.appendChild(bgLabel); bgRow.appendChild(bgSwatch); bgRow.appendChild(bgPicker);
     qualSec.appendChild(bgRow);
 
-    // 2× DPR toggle
+    // Hi-DPI toggle
     const dprRow = el('div', 'ctrl-toggle-row');
     const dprLabel = el('label', 'ctrl-toggle-label');
     const dprCheck = document.createElement('input');
     dprCheck.type = 'checkbox'; dprCheck.checked = s.dpr >= 2;
-    dprCheck.onchange = () => {
-      s.dpr = dprCheck.checked ? 2 : 1;
-      this.engine.resize();
-      this.onChange();
-    };
+    dprCheck.onchange = () => { s.dpr = dprCheck.checked ? 2 : 1; this.engine.resize(); ch(); };
     dprLabel.appendChild(dprCheck);
     dprLabel.append(' Hi-DPI (2×) Render');
     dprRow.appendChild(dprLabel);
@@ -219,7 +194,7 @@ export class ControlPanel {
     const wireLabel = el('label', 'ctrl-toggle-label');
     const wireCheck = document.createElement('input');
     wireCheck.type = 'checkbox'; wireCheck.checked = s.wireframe;
-    wireCheck.onchange = () => { s.wireframe = wireCheck.checked; this.engine.markDirty(); this.onChange(); };
+    wireCheck.onchange = () => { s.wireframe = wireCheck.checked; ch(); };
     wireLabel.appendChild(wireCheck);
     wireLabel.append(' Wireframe Mode');
     wireRow.appendChild(wireLabel);
@@ -227,7 +202,7 @@ export class ControlPanel {
   }
 }
 
-// ── DOM helpers ────────────────────────────────────────────────────────────
+// ── DOM helpers ───────────────────────────────────────────────────────────────
 
 function el(tag: string, cls?: string): HTMLElement {
   const e = document.createElement(tag);
@@ -254,7 +229,7 @@ function numInput(
   parent: HTMLElement, label: string, value: number,
   min: number, max: number, step: number,
   onChange: (v: number) => void,
-): HTMLInputElement {
+): void {
   const lbl = el('label', 'ctrl-num-label');
   lbl.textContent = label;
   const inp = document.createElement('input');
@@ -264,7 +239,6 @@ function numInput(
   inp.onchange = () => { const v = parseFloat(inp.value); if (!isNaN(v)) onChange(v); };
   lbl.appendChild(inp);
   parent.appendChild(lbl);
-  return inp;
 }
 
 function slider(
@@ -272,35 +246,36 @@ function slider(
   min: number, max: number, step: number,
   onChange: (v: number) => void,
 ): void {
-  const row = el('div', 'ctrl-slider-row');
+  const r = el('div', 'ctrl-slider-row');
   const lbl = el('span', 'ctrl-slider-label'); lbl.textContent = label;
-
   const sl = document.createElement('input');
   sl.type = 'range'; sl.className = 'ctrl-slider';
   sl.min = String(min); sl.max = String(max); sl.step = String(step);
   sl.value = String(value);
-
   const dec = step < 0.001 ? 4 : step < 0.01 ? 3 : step < 0.1 ? 2 : 1;
   const val = el('span', 'ctrl-slider-value');
   val.textContent = value.toFixed(dec);
-
-  sl.oninput = () => {
-    const v = parseFloat(sl.value);
-    val.textContent = v.toFixed(dec);
-    onChange(v);
-  };
-
-  row.appendChild(lbl); row.appendChild(sl); row.appendChild(val);
-  parent.appendChild(row);
+  sl.oninput = () => { const v = parseFloat(sl.value); val.textContent = v.toFixed(dec); onChange(v); };
+  r.appendChild(lbl); r.appendChild(sl); r.appendChild(val);
+  parent.appendChild(r);
 }
 
-function hsl2hex(h: number, s: number, l: number): string {
-  l /= 100; s /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = (n: number) => {
-    const k = (n + h / 30) % 12;
-    const c = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
-    return Math.round(255 * c).toString(16).padStart(2, '0');
-  };
-  return `#${f(0)}${f(8)}${f(4)}`;
+function dropdown<T extends string>(
+  parent: HTMLElement,
+  current: T,
+  options: [T, string][],
+  onChange: (v: T) => void,
+): void {
+  const r = el('div', 'ctrl-dropdown-row');
+  const sel = document.createElement('select');
+  sel.className = 'ctrl-dropdown';
+  for (const [val, label] of options) {
+    const opt = document.createElement('option');
+    opt.value = val; opt.textContent = label;
+    if (val === current) opt.selected = true;
+    sel.appendChild(opt);
+  }
+  sel.onchange = () => onChange(sel.value as T);
+  r.appendChild(sel);
+  parent.appendChild(r);
 }

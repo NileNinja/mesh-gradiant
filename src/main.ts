@@ -2,17 +2,18 @@ import './style.css';
 import { GradientEngine } from './engine/GradientEngine';
 import { ControlPanel } from './ui/ControlPanel';
 import { DEFAULT_STATE, cloneState, serializeState, deserializeState } from './state/GradientState';
+import type { GradientState, ColorStop } from './state/GradientState';
 import { PRESETS } from './state/presets';
-import type { GradientState } from './state/GradientState';
 
-// ── Custom Preset Store (localStorage, no backend) ────────────────────────────
+// ── Custom Preset Store ────────────────────────────────────────────────────────
+
 const CUSTOM_KEY = 'meshgrad-custom-presets';
 
 interface CustomPreset {
-  id:    string;   // unique timestamp-based ID
+  id:    string;
   name:  string;
-  emoji: string;   // derived from dominant color
-  state: string;   // base64-encoded serialized GradientState
+  emoji: string;
+  state: string;
 }
 
 const CustomPresets = {
@@ -24,12 +25,11 @@ const CustomPresets = {
   },
   add(name: string, state: GradientState): CustomPreset {
     const list = CustomPresets.load();
-    // Pick an emoji based on the first color's red channel as a rough hue proxy
     const hueEmojis = ['🔴','🟠','🟡','🟢','🔵','🟣','⚪','🌈'];
-    const r = parseInt(state.colors[0]?.slice(1, 3) ?? '80', 16);
+    const r = parseInt((state.colors[0]?.hex ?? '#808080').slice(1, 3), 16);
     const emoji = hueEmojis[Math.floor((r / 256) * (hueEmojis.length - 1))];
     const preset: CustomPreset = { id: `${Date.now()}`, name, emoji, state: serializeState(state) };
-    list.unshift(preset);   // newest first
+    list.unshift(preset);
     CustomPresets.save(list);
     return preset;
   },
@@ -41,8 +41,7 @@ const CustomPresets = {
   },
 };
 
-
-// ── App ─────────────────────────────────────────────────────────────────────
+// ── App ───────────────────────────────────────────────────────────────────────
 
 let engine: GradientEngine;
 let panel: ControlPanel;
@@ -50,22 +49,28 @@ let mediaRecorder: MediaRecorder | null = null;
 let recording = false;
 
 function init() {
-  // ── Load saved state or use default ─────────────────────────────────────
-  const saved = localStorage.getItem('meshgrad-state');
-  const state = saved ? (deserializeState(saved) ?? cloneState(DEFAULT_STATE)) : cloneState(DEFAULT_STATE);
+  // Respect OS reduced-motion preference
+  const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // ── Canvas setup ──────────────────────────────────────────────────────────
+  const saved   = localStorage.getItem('meshgrad-state');
+  const state   = saved
+    ? (deserializeState(saved) ?? cloneState(DEFAULT_STATE))
+    : cloneState(DEFAULT_STATE);
+
+  if (prefersReduced) {
+    state.paused = true;
+    state.reducedMotion = true;
+  }
+
   const canvas = document.getElementById('gradient-canvas') as HTMLCanvasElement;
   engine = new GradientEngine(canvas, state);
 
-  // ── Control panel ─────────────────────────────────────────────────────────
   const panelEl = document.getElementById('ctrl-panel-root')!;
   panel = new ControlPanel(panelEl, engine, onStateChange);
 
-  // ── FPS display ───────────────────────────────────────────────────────────
-  const fpsEl   = document.getElementById('status-fps')!;
-  const sizeEl  = document.getElementById('status-size')!;
-  const meshEl  = document.getElementById('status-mesh')!;
+  const fpsEl  = document.getElementById('status-fps')!;
+  const sizeEl = document.getElementById('status-size')!;
+  const meshEl = document.getElementById('status-mesh')!;
 
   engine.onFrame = (fps) => {
     fpsEl.textContent  = `${Math.round(fps)} fps`;
@@ -75,12 +80,20 @@ function init() {
 
   engine.start();
 
-  // ── Engine watchdog: restart if RAF loop dies silently ────────────────────
-  // Covers the case where the GPU driver resets without a webglcontextlost event.
-  // Checks every 3 s — if lastFrameTime hasn't advanced, restart the loop.
+  // ── Reduced-motion banner ────────────────────────────────────────────────
+  if (prefersReduced) {
+    const banner = document.createElement('div');
+    banner.className = 'reduced-motion-banner';
+    banner.textContent = '⚠ Paused — reduced-motion preference detected. Press Space to play.';
+    document.querySelector('.canvas-viewport')?.prepend(banner);
+    window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', (e) => {
+      if (!e.matches) { banner.remove(); engine.state.paused = false; }
+    });
+  }
+
+  // ── Watchdog ─────────────────────────────────────────────────────────────
   setInterval(() => {
     if (!engine.state.paused && (performance.now() - engine.lastFrameTime) > 4000) {
-      console.warn('[Watchdog] Engine loop appears stalled — restarting...');
       engine.stop();
       engine.start();
     }
@@ -88,7 +101,7 @@ function init() {
 
   buildPresetDropdown();
 
-  // ── Toolbar buttons ───────────────────────────────────────────────────────
+  // ── Toolbar ───────────────────────────────────────────────────────────────
   document.getElementById('btn-play-pause')!.onclick = () => {
     engine.state.paused = !engine.state.paused;
     const btn = document.getElementById('btn-play-pause')!;
@@ -96,23 +109,20 @@ function init() {
   };
 
   document.getElementById('btn-panel-toggle')!.onclick = () => {
-    const sidebar = document.querySelector('.panel-sidebar')!;
-    sidebar.classList.toggle('hidden');
+    document.querySelector('.panel-sidebar')!.classList.toggle('hidden');
   };
 
   document.getElementById('btn-export-png')!.onclick = async () => {
     const blob = await engine.snapshot();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
     a.href = url; a.download = `mesh-gradient-${Date.now()}.png`;
     a.click(); URL.revokeObjectURL(url);
   };
 
+  // Replace old CSS export with the export panel toggle
   document.getElementById('btn-export-css')!.onclick = () => {
-    const s = engine.state;
-    const colors = s.colors.join(', ');
-    const css = `/* Mesh Gradient — MeshStudio */\nbackground: linear-gradient(135deg, ${colors});`;
-    navigator.clipboard.writeText(css).then(() => showToast('CSS copied!'));
+    openExportModal();
   };
 
   document.getElementById('btn-copy-state')!.onclick = () => {
@@ -121,11 +131,11 @@ function init() {
     navigator.clipboard.writeText(url.toString()).then(() => showToast('Link copied!'));
   };
 
-  document.getElementById('btn-record')!.onclick     = toggleRecord;
-  document.getElementById('btn-randomize')!.onclick  = randomize;
+  document.getElementById('btn-record')!.onclick    = toggleRecord;
+  document.getElementById('btn-randomize')!.onclick = randomize;
   document.getElementById('btn-save-preset')!.onclick = savePreset;
 
-  // ── Share URL state load ──────────────────────────────────────────────────
+  // ── URL state load ────────────────────────────────────────────────────────
   const urlState = new URLSearchParams(location.search).get('s');
   if (urlState) {
     const parsed = deserializeState(urlState);
@@ -134,46 +144,45 @@ function init() {
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   document.addEventListener('keydown', e => {
-    if (e.target instanceof HTMLInputElement) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
     if (e.key === ' ') { e.preventDefault(); engine.state.paused = !engine.state.paused; }
     if (e.key.toLowerCase() === 'p') document.getElementById('btn-export-png')!.click();
     if (e.key.toLowerCase() === 'r') document.getElementById('btn-record')!.click();
     if (e.key.toLowerCase() === 't') document.querySelector<HTMLElement>('.panel-sidebar')?.classList.toggle('hidden');
-    if (e.key.toLowerCase() === 'w') { engine.state.wireframe = !engine.state.wireframe; }
+    if (e.key.toLowerCase() === 'w') { engine.state.wireframe = !engine.state.wireframe; engine.markDirty(); }
     if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) savePreset();
   });
 }
 
-// ── State change handler ──────────────────────────────────────────────────
+// ── State persistence ─────────────────────────────────────────────────────────
+
 function onStateChange() {
   engine.markDirty();
   localStorage.setItem('meshgrad-state', serializeState(engine.state));
 }
 
-// ── Preset dropdown ────────────────────────────────────────────────────────
+// ── Preset dropdown ───────────────────────────────────────────────────────────
+
 function buildPresetDropdown() {
   const btn = document.getElementById('preset-btn')!;
   const dd  = document.getElementById('preset-dropdown')!;
-
   btn.onclick = (e) => { e.stopPropagation(); dd.classList.toggle('open'); };
   document.addEventListener('click', () => dd.classList.remove('open'));
-
   renderDropdown();
 }
 
 function renderDropdown() {
   const dd = document.getElementById('preset-dropdown')!;
-  dd.innerHTML = '';
+  dd.textContent = '';
 
   const applyState = (name: string, emoji: string, state: GradientState) => {
     engine.applyState(cloneState(state));
     panel.render();
-    document.getElementById('preset-name')!.textContent = emoji + '\u00a0\u00a0' + name;
+    document.getElementById('preset-name')!.textContent = emoji + '  ' + name;
     dd.classList.remove('open');
     onStateChange();
   };
 
-  // ── Custom presets ───────────────────────────────────────────────────────
   const customs = CustomPresets.load();
   if (customs.length > 0) {
     const lbl = document.createElement('div');
@@ -185,17 +194,31 @@ function renderDropdown() {
       const state = CustomPresets.decode(cp);
       const item  = document.createElement('div');
       item.className = 'preset-item';
-      item.innerHTML = `
-        <span class="preset-item-emoji">${cp.emoji}</span>
-        <div class="preset-item-info"><strong>${cp.name}</strong></div>
-        <button class="preset-item-delete" title="Delete preset">🗑</button>`;
 
-      item.querySelector<HTMLButtonElement>('.preset-item-delete')!.onclick = (e) => {
+      const emojiSpan = document.createElement('span');
+      emojiSpan.className = 'preset-item-emoji';
+      emojiSpan.textContent = cp.emoji;
+
+      const info = document.createElement('div');
+      info.className = 'preset-item-info';
+      const strong = document.createElement('strong');
+      strong.textContent = cp.name;
+      info.appendChild(strong);
+
+      const del = document.createElement('button');
+      del.className = 'preset-item-delete';
+      del.title = 'Delete preset';
+      del.textContent = '🗑';
+      del.onclick = (e) => {
         e.stopPropagation();
         CustomPresets.remove(cp.id);
         renderDropdown();
         showToast(`Deleted "${cp.name}"`);
       };
+
+      item.appendChild(emojiSpan);
+      item.appendChild(info);
+      item.appendChild(del);
 
       if (state) {
         item.onclick = (e) => {
@@ -219,44 +242,71 @@ function renderDropdown() {
     dd.appendChild(lbl2);
   }
 
-  // ── Built-in presets ────────────────────────────────────────────────────
   for (const preset of PRESETS) {
     const item = document.createElement('div');
     item.className = 'preset-item';
-    item.innerHTML = `
-      <span class="preset-item-emoji">${preset.emoji}</span>
-      <div class="preset-item-info">
-        <strong>${preset.name}</strong>
-        <small>${preset.description}</small>
-      </div>`;
+
+    const emojiSpan = document.createElement('span');
+    emojiSpan.className = 'preset-item-emoji';
+    emojiSpan.textContent = preset.emoji;
+
+    const info = document.createElement('div');
+    info.className = 'preset-item-info';
+    const strong = document.createElement('strong');
+    strong.textContent = preset.name;
+    const small = document.createElement('small');
+    small.textContent = preset.description;
+    info.appendChild(strong);
+    info.appendChild(small);
+
+    item.appendChild(emojiSpan);
+    item.appendChild(info);
     item.onclick = () => applyState(preset.name, preset.emoji, preset.state);
     dd.appendChild(item);
   }
 }
 
-// ── Save current state as a named custom preset ────────────────────────────
+// ── Save Preset ───────────────────────────────────────────────────────────────
+
 function savePreset() {
-  // Custom modal — prompt() is blocked in some environments and looks bad
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-box">
-      <div class="modal-title">Save Preset</div>
-      <input id="modal-preset-name" class="modal-input"
-             type="text" placeholder="e.g. My Blue Gradient"
-             value="My Gradient" maxlength="40" spellcheck="false" autocomplete="off"/>
-      <div class="modal-actions">
-        <button id="modal-cancel" class="modal-btn">Cancel</button>
-        <button id="modal-save"   class="modal-btn modal-btn--primary">⭐ Save</button>
-      </div>
-    </div>`;
+
+  const box = document.createElement('div');
+  box.className = 'modal-box';
+
+  const title = document.createElement('div');
+  title.className = 'modal-title';
+  title.textContent = 'Save Preset';
+
+  const input = document.createElement('input');
+  input.id = 'modal-preset-name';
+  input.className = 'modal-input';
+  input.type = 'text';
+  input.placeholder = 'e.g. My Blue Gradient';
+  input.value = 'My Gradient';
+  input.maxLength = 40;
+  input.spellcheck = false;
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'modal-btn';
+  cancelBtn.textContent = 'Cancel';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'modal-btn modal-btn--primary';
+  saveBtn.textContent = '⭐ Save';
+
+  actions.appendChild(cancelBtn);
+  actions.appendChild(saveBtn);
+  box.appendChild(title);
+  box.appendChild(input);
+  box.appendChild(actions);
+  overlay.appendChild(box);
   document.body.appendChild(overlay);
 
-  const input  = overlay.querySelector<HTMLInputElement>('#modal-preset-name')!;
-  const cancel = overlay.querySelector<HTMLButtonElement>('#modal-cancel')!;
-  const save   = overlay.querySelector<HTMLButtonElement>('#modal-save')!;
-
-  // Pre-select text so user can just start typing
   requestAnimationFrame(() => { input.focus(); input.select(); });
 
   const commit = () => {
@@ -265,33 +315,223 @@ function savePreset() {
     overlay.remove();
     const cp = CustomPresets.add(name, cloneState(engine.state));
     renderDropdown();
-    document.getElementById('preset-name')!.textContent = cp.emoji + '\u00a0\u00a0' + name;
+    document.getElementById('preset-name')!.textContent = cp.emoji + '  ' + name;
     showToast(`⭐ Saved "${name}"`);
   };
-
   const close = () => overlay.remove();
 
-  save.onclick   = commit;
-  cancel.onclick = close;
+  saveBtn.onclick   = commit;
+  cancelBtn.onclick = close;
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter')  commit();
+    if (e.key === 'Enter') commit();
     if (e.key === 'Escape') close();
   });
 }
 
-// ── Randomize ─────────────────────────────────────────────────────────────
+// ── Export Modal (Phase 5 stub — currently shows live CSS + PNG) ──────────────
+
+function openExportModal() {
+  const s = engine.state;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  const box = document.createElement('div');
+  box.className = 'modal-box modal-box--wide';
+
+  const title = document.createElement('div');
+  title.className = 'modal-title';
+  title.textContent = '↓ Export';
+
+  // Tab bar
+  const tabs = ['CSS', 'Next.js', 'Vanilla HTML', 'Web Component', 'Media'] as const;
+  const tabBar = document.createElement('div');
+  tabBar.className = 'modal-tabs';
+
+  const contentArea = document.createElement('div');
+  contentArea.className = 'modal-tab-content';
+
+  const _activeTab: typeof tabs[number][] = ['CSS'];
+  const tabBtns: Record<string, HTMLButtonElement> = {};
+
+  const renderTab = (tab: typeof tabs[number]) => {
+    _activeTab[0] = tab;
+    contentArea.textContent = '';
+    for (const [k, b] of Object.entries(tabBtns)) b.classList.toggle('active', k === tab);
+
+    const pre = document.createElement('pre');
+    pre.className = 'modal-code';
+
+    if (tab === 'CSS') {
+      const layers = s.colors.map((c, i) => {
+        const angle = (i / s.colors.length) * 360;
+        const xPct  = Math.round(50 + 35 * Math.cos(angle * Math.PI / 180));
+        const yPct  = Math.round(50 + 35 * Math.sin(angle * Math.PI / 180));
+        return `radial-gradient(circle at ${xPct}% ${yPct}%, ${c.hex}${alphaToHex(c.alpha)}, transparent 60%)`;
+      });
+      const css = `/* Mesh Gradient — MeshStudio */\nbackground: ${s.bgColor};\nbackground-image:\n  ${layers.join(',\n  ')};`;
+      pre.textContent = css;
+      addCopyBtn(contentArea, css);
+    } else if (tab === 'Next.js') {
+      const code = genNextJs(s);
+      pre.textContent = code;
+      addCopyBtn(contentArea, code);
+    } else if (tab === 'Vanilla HTML') {
+      const code = genVanilla(s);
+      pre.textContent = code;
+      addCopyBtn(contentArea, code);
+    } else if (tab === 'Web Component') {
+      const note = document.createElement('p');
+      note.className = 'modal-note';
+      note.textContent = 'Full Web Component export is coming in the next update. Use Vanilla HTML for now.';
+      contentArea.appendChild(note);
+    } else {
+      addMediaExport(contentArea);
+    }
+
+    contentArea.appendChild(pre);
+  };
+
+  for (const tab of tabs) {
+    const btn = document.createElement('button');
+    btn.className = 'modal-tab-btn';
+    btn.textContent = tab;
+    btn.onclick = () => renderTab(tab);
+    tabBar.appendChild(btn);
+    tabBtns[tab] = btn;
+  }
+
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-close-btn';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => overlay.remove();
+
+  box.appendChild(title);
+  box.appendChild(closeBtn);
+  box.appendChild(tabBar);
+  box.appendChild(contentArea);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  renderTab('CSS');
+}
+
+function alphaToHex(a: number): string {
+  if (a >= 1) return '';
+  return Math.round(a * 255).toString(16).padStart(2, '0');
+}
+
+function addCopyBtn(parent: HTMLElement, text: string) {
+  const btn = document.createElement('button');
+  btn.className = 'modal-copy-btn';
+  btn.textContent = 'Copy';
+  btn.onclick = () => {
+    navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); });
+  };
+  parent.appendChild(btn);
+}
+
+function addMediaExport(parent: HTMLElement) {
+  const note = document.createElement('p');
+  note.className = 'modal-note';
+  note.textContent = 'Use the toolbar buttons to export PNG or record WebM video.';
+  parent.appendChild(note);
+
+  const pngBtn = document.createElement('button');
+  pngBtn.className = 'toolbar-btn primary';
+  pngBtn.textContent = '↓ Export PNG';
+  pngBtn.onclick = () => document.getElementById('btn-export-png')!.click();
+
+  const webmBtn = document.createElement('button');
+  webmBtn.className = 'toolbar-btn';
+  webmBtn.textContent = '⏺ Record WebM';
+  webmBtn.onclick = () => document.getElementById('btn-record')!.click();
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'modal-media-row';
+  btnRow.appendChild(pngBtn);
+  btnRow.appendChild(webmBtn);
+  parent.appendChild(btnRow);
+}
+
+function genNextJs(s: GradientState): string {
+  const stateJson = JSON.stringify({
+    colors: s.colors, renderMode: s.renderMode, material: s.material,
+    motionMode: s.motionMode, speed: s.speed, seed: s.seed,
+    bgColor: s.bgColor, grain: s.grain, glowAmount: s.glowAmount,
+  }, null, 2);
+  return `'use client';
+// MeshGradient.tsx — generated by MeshStudio
+// npm install (no extra deps — self-contained WebGL2 runtime)
+// Add to your layout: <MeshGradient className="absolute inset-0 -z-10" />
+
+import { useEffect, useRef } from 'react';
+
+const STATE = ${stateJson};
+
+export default function MeshGradient({ className = '' }: { className?: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    // TODO: import runtime and call mount(canvas, STATE)
+    // Full runtime will be generated in MeshStudio v2 export
+    canvas.style.background = '${s.bgColor}';
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className={\`w-full h-full \${className}\`}
+    />
+  );
+}`;
+}
+
+function genVanilla(s: GradientState): string {
+  const layers = s.colors.map((c, i) => {
+    const angle = (i / s.colors.length) * 360;
+    const xPct  = Math.round(50 + 35 * Math.cos(angle * Math.PI / 180));
+    const yPct  = Math.round(50 + 35 * Math.sin(angle * Math.PI / 180));
+    return `  radial-gradient(circle at ${xPct}% ${yPct}%, ${c.hex}${alphaToHex(c.alpha)}, transparent 60%)`;
+  }).join(',\n');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Mesh Gradient</title>
+  <style>
+    body { margin: 0; }
+    .mesh-gradient {
+      width: 100vw;
+      height: 100vh;
+      background: ${s.bgColor};
+      background-image:
+${layers};
+    }
+  </style>
+</head>
+<body>
+  <div class="mesh-gradient" aria-hidden="true"></div>
+  <!-- Full animated WebGL runtime: coming in MeshStudio v2 export -->
+</body>
+</html>`;
+}
+
+// ── Randomize ─────────────────────────────────────────────────────────────────
+
 function randomize() {
   const s = engine.state;
   const rnd = (min: number, max: number) => min + Math.random() * (max - min);
 
-  // Generate a vivid hex color from HSL (high saturation, mid-high lightness)
-  // Stored as hex so color pickers display correctly & engine always parses it
-  const rndHex = () => {
-    const h = Math.random() * 360;
-    const sat = 65 + Math.random() * 30;   // 65–95%
-    const lit = 45 + Math.random() * 25;   // 45–70%
-    // Convert HSL → RGB → hex inline
+  const rndHex = (): string => {
+    const h = Math.random() * 360, sat = 65 + Math.random() * 30, lit = 45 + Math.random() * 25;
     const hf = h / 360, sf = sat / 100, lf = lit / 100;
     const q = lf < 0.5 ? lf * (1 + sf) : lf + sf - lf * sf;
     const p = 2 * lf - q;
@@ -302,41 +542,38 @@ function randomize() {
       if (t < 2/3) return p + (q-p)*(2/3-t)*6;
       return p;
     };
-    const r = Math.round(hue2r(hf + 1/3) * 255);
-    const g = Math.round(hue2r(hf      ) * 255);
-    const b = Math.round(hue2r(hf - 1/3) * 255);
-    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+    const r2 = Math.round(hue2r(hf + 1/3) * 255);
+    const g2 = Math.round(hue2r(hf      ) * 255);
+    const b2 = Math.round(hue2r(hf - 1/3) * 255);
+    return '#' + [r2,g2,b2].map(v => v.toString(16).padStart(2,'0')).join('');
   };
 
-  const count = 3 + (Math.random() * 3 | 0);  // 3–5 colors
-  s.colors = Array.from({ length: count }, rndHex);
+  const count = 3 + (Math.random() * 4 | 0);  // 3–6
+  const newColors: ColorStop[] = Array.from({ length: count }, () => ({ hex: rndHex(), alpha: 1 }));
+  s.colors = newColors;
 
-  // Reset position — otherwise leftover extreme values push the mesh off-canvas
   s.positionX = 0; s.positionY = 0; s.positionZ = 0;
-
   s.rotationX = rnd(-Math.PI / 2, 0);
   s.rotationY = rnd(-0.5, 0.5);
   s.rotationZ = rnd(0, Math.PI * 2);
   s.scaleX = rnd(5, 10); s.scaleY = rnd(3, 6); s.scaleZ = rnd(5, 10);
   s.displaceFreqX = rnd(0.002, 0.012);
   s.displaceFreqZ = rnd(0.004, 0.018);
-  s.displaceAmount = rnd(-10, -3);  // cap at -10 to avoid extreme geometry
-
-  // Constrain twist to safe ranges — high pow values cause extreme vertex
-  // displacement that can freeze rendering or black-out the canvas
+  s.displaceAmount = rnd(-10, -3);
   s.twistFreqX = rnd(-1.0, 1.0); s.twistFreqY = rnd(-0.6, 0.6); s.twistFreqZ = rnd(-1.0, 1.0);
   s.twistPowX  = rnd(0, 2.5);    s.twistPowY  = rnd(0, 1.2);    s.twistPowZ  = rnd(0, 2.5);
-
   s.colorHueShift   = rnd(-0.3, 0.3);
-  s.colorSaturation = rnd(0.8, 1.3);  // subtle — heavy sat changes look wrong
-  s.colorContrast   = rnd(0.9, 1.2);  // keep contrast near 1 to avoid black-out
+  s.colorSaturation = rnd(0.8, 1.3);
+  s.colorContrast   = rnd(0.9, 1.2);
   s.glowAmount = rnd(0.5, 2.5);
+  s.seed = Math.floor(Math.random() * 100);
 
   panel.render();
   onStateChange();
 }
 
-// ── Video recording ───────────────────────────────────────────────────────
+// ── Video recording ───────────────────────────────────────────────────────────
+
 function toggleRecord() {
   const btn = document.getElementById('btn-record')!;
   if (recording) {
@@ -347,7 +584,7 @@ function toggleRecord() {
     return;
   }
   const canvas = document.getElementById('gradient-canvas') as HTMLCanvasElement;
-  const stream = (canvas as any).captureStream?.(30);
+  const stream = (canvas as unknown as { captureStream?: (fps: number) => MediaStream }).captureStream?.(30);
   if (!stream) { showToast('captureStream not supported'); return; }
   const chunks: Blob[] = [];
   mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
@@ -365,7 +602,8 @@ function toggleRecord() {
   btn.classList.add('recording');
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
 function showToast(msg: string) {
   const t = document.createElement('div');
   t.className = 'toast';
@@ -375,13 +613,14 @@ function showToast(msg: string) {
   setTimeout(() => t.remove(), 2200);
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────
+// ── Boot ─────────────────────────────────────────────────────────────────────
+
 try {
   init();
 } catch (err) {
   console.error('MeshStudio init failed:', err);
-  document.body.innerHTML += `<div style="position:fixed;top:60px;left:50%;transform:translateX(-50%);
-    background:#1a0000;border:1px solid #ff4444;color:#ff8888;padding:16px 24px;
-    border-radius:8px;font-family:monospace;font-size:12px;max-width:80%;white-space:pre-wrap;z-index:9999">
-    Error: ${err}</div>`;
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1a0000;border:1px solid #ff4444;color:#ff8888;padding:16px 24px;border-radius:8px;font-family:monospace;font-size:12px;max-width:80%;white-space:pre-wrap;z-index:9999';
+  errDiv.textContent = `Error: ${err}`;
+  document.body.appendChild(errDiv);
 }

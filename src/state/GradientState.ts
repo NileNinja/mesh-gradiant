@@ -1,104 +1,146 @@
-/**
- * GradientState — mirrors the original Stripe MiniGL tool parameters exactly.
- *
- * The 3D pipeline:
- *   1.  A large subdivided XZ plane (mesh detail × mesh detail quads)
- *   2.  Vertex shader: scale → noise displacement on Y → twist → model rotation/position
- *   3.  Perspective camera looking at origin from a configurable angle
- *   4.  Fragment shader: noise-driven color band blending → HSL adjust
- *   5.  Bloom post-process: bright extract → H-blur → V-blur → composite + grain
- */
+export interface ColorStop {
+  hex:   string;   // '#rrggbb'
+  alpha: number;   // 0..1
+}
 
-// Up to 6 colors in the gradient palette
-export type HexColor = string;
+export type RenderMode = 'waves' | 'blobs' | 'hybrid';
+export type Material   = 'standard' | 'iridescent' | 'glass' | 'plasma' | 'silk';
+export type MotionMode = 'flow' | 'drift' | 'swirl' | 'ripple' | 'pulse' | 'breathe' | 'aurora' | 'custom';
 
 export interface GradientState {
   // ── Canvas ───────────────────────────────────────────────────────
-  canvasWidth:  number;   // px
-  canvasHeight: number;   // px
+  canvasWidth:  number;
+  canvasHeight: number;
 
   // ── Color palette ─────────────────────────────────────────────────
-  colors: HexColor[];     // 2–6 colors, blended by noise
+  colors: ColorStop[];   // 2–8 stops; each has hex + alpha
+
+  // ── Render style ─────────────────────────────────────────────────
+  renderMode: RenderMode;
+  material:   Material;
+
+  // ── Material params ───────────────────────────────────────────────
+  iridescence:         number;  // 0–1
+  chromaticAberration: number;  // 0–2
+  refraction:          number;  // 0–1
+
+  // ── Motion ────────────────────────────────────────────────────────
+  motionMode:      MotionMode;
+  motionIntensity: number;   // 0–1, scales overall movement amplitude
 
   // ── Mesh transform (model matrix) ─────────────────────────────────
-  positionX: number;      // world-unit offset (camera space)
+  positionX: number;
   positionY: number;
   positionZ: number;
-  scaleX: number;         // displacement noise scale on each axis
-  scaleY: number;         // also controls apparent "density" of waves
+  scaleX: number;
+  scaleY: number;
   scaleZ: number;
-  rotationX: number;      // radians — tilt the mesh (main 3D look)
+  rotationX: number;
   rotationY: number;
   rotationZ: number;
 
   // ── Vertex displacement ───────────────────────────────────────────
-  displaceFreqX: number;  // noise frequency in X (0.001–0.05)
-  displaceFreqZ: number;  // noise frequency in Z (0.001–0.05)
-  displaceAmount: number; // displacement height multiplier (–30 to 30)
+  displaceFreqX: number;
+  displaceFreqZ: number;
+  displaceAmount: number;
 
-  // ── Twist (applied after displacement, creates ribbon/weave look) ──
-  twistFreqX: number;     // –2 to 2
+  // ── Twist ─────────────────────────────────────────────────────────
+  twistFreqX: number;
   twistFreqY: number;
   twistFreqZ: number;
-  twistPowX:  number;     // 0 to 6 — how strongly twist wraps
+  twistPowX:  number;
   twistPowY:  number;
   twistPowZ:  number;
 
   // ── Color mapping ─────────────────────────────────────────────────
-  colorContrast:    number;  // 0.5–3
-  colorSaturation:  number;  // 0–2.5
-  colorHueShift:    number;  // –0.5 to 0.5
+  colorContrast:   number;
+  colorSaturation: number;
+  colorHueShift:   number;
 
   // ── Glow / bloom ──────────────────────────────────────────────────
-  glowAmount: number;   // 0–5  — bloom strength
-  glowPower:  number;   // 0–1  — brightness threshold
-  glowRamp:   number;   // 0–1  — bloom softness
+  glowAmount: number;
+  glowPower:  number;
+  glowRamp:   number;
 
   // ── Post-processing ───────────────────────────────────────────────
-  blur:       number;   // 0–2   — radial/motion blur passes
-  grain:      number;   // 0–2   — film grain
-  vignette:   number;   // 0–1.5 — edge darkening
+  blur:     number;
+  grain:    number;
+  vignette: number;
 
   // ── Camera ────────────────────────────────────────────────────────
-  cameraFov:  number;   // degrees (20–90)
-  cameraDist: number;   // distance from origin (200–1200)
+  cameraFov:  number;
+  cameraDist: number;
 
   // ── Animation ─────────────────────────────────────────────────────
-  speed:    number;    // global time multiplier
+  speed:    number;
   paused:   boolean;
 
+  // ── Randomization seed (stable reproducibility) ────────────────────
+  seed: number;
+
   // ── Quality / Performance ─────────────────────────────────────────
-  meshDetail: number;  // subdivisions (32–160)
-  wireframe:  boolean;
-  targetFps:  number;  // render cap (10–60), default 30
-  dpr:        number;  // device pixel ratio cap (1 or 2)
-  bgColor:    string;  // hex — mesh edges blend into this color
+  meshDetail:    number;
+  wireframe:     boolean;
+  targetFps:     number;
+  dpr:           number;
+  bgColor:       string;
+  reducedMotion: boolean;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
 export function cloneState(s: GradientState): GradientState {
-  return { ...s, colors: [...s.colors] };
+  return { ...s, colors: s.colors.map(c => ({ ...c })) };
 }
 
 export function serializeState(s: GradientState): string {
   return btoa(JSON.stringify(s));
 }
 
+/** Migrate old hex-string colors array to ColorStop[]. */
+function migrateColors(raw: unknown): ColorStop[] {
+  if (!Array.isArray(raw)) return DEFAULT_STATE.colors.map(c => ({ ...c }));
+  return raw.map(c => {
+    if (typeof c === 'string') return { hex: c, alpha: 1 };
+    if (c && typeof c === 'object' && 'hex' in c)
+      return { hex: (c as ColorStop).hex, alpha: (c as ColorStop).alpha ?? 1 };
+    return { hex: '#ffffff', alpha: 1 };
+  });
+}
+
 export function deserializeState(raw: string): GradientState | null {
   try {
-    const parsed = JSON.parse(atob(raw)) as Partial<GradientState>;
-    // Merge with DEFAULT_STATE so new fields introduced in later versions are populated
-    return { ...DEFAULT_STATE, ...parsed, colors: parsed.colors ?? DEFAULT_STATE.colors };
+    const parsed = JSON.parse(atob(raw)) as Partial<GradientState> & { colors?: unknown };
+    return {
+      ...DEFAULT_STATE,
+      ...parsed,
+      colors: migrateColors(parsed.colors),
+    };
   } catch { return null; }
 }
 
-// ── Default — "Stripe Classic" with the exact original tool values ──
+// ── Defaults ────────────────────────────────────────────────────────
 export const DEFAULT_STATE: GradientState = {
   canvasWidth:  1200,
   canvasHeight: 675,
 
-  colors: ['#0048e5', '#ff6030', '#e040fb', '#00c8e8', '#ffffff'],
+  colors: [
+    { hex: '#0048e5', alpha: 1 },
+    { hex: '#ff6030', alpha: 1 },
+    { hex: '#e040fb', alpha: 1 },
+    { hex: '#00c8e8', alpha: 1 },
+    { hex: '#ffffff', alpha: 1 },
+  ],
+
+  renderMode: 'waves',
+  material:   'standard',
+
+  iridescence:         0.0,
+  chromaticAberration: 0.0,
+  refraction:          0.0,
+
+  motionMode:      'flow',
+  motionIntensity: 0.5,
 
   positionX:  0,
   positionY:  0,
@@ -139,9 +181,12 @@ export const DEFAULT_STATE: GradientState = {
   speed:    1.0,
   paused:   false,
 
-  meshDetail: 80,
-  wireframe:  false,
-  targetFps:  30,
-  dpr:        1,
-  bgColor:    '#0a0a14',
+  seed: 0,
+
+  meshDetail:    80,
+  wireframe:     false,
+  targetFps:     30,
+  dpr:           1,
+  bgColor:       '#0a0a14',
+  reducedMotion: false,
 };
