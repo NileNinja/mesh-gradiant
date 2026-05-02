@@ -189,6 +189,11 @@ export class GradientEngine {
 
   lastFrameTime = 0;
 
+  // Adaptive quality EMA — auto-tiers meshDetail and DPR based on frame time
+  private frameEma = 16.7;  // starts at 60fps equivalent
+  private qualCooldown = 0; // frames before next quality change
+  private hiddenByIO = false;
+
   private pvMatrix!: M4;
   private pvDirty  = true;
 
@@ -527,20 +532,56 @@ export class GradientEngine {
       const actualDt = Math.min(dt, 100);
       this.last = ts;
 
-      if (!this.state.paused) {
+      if (!this.state.paused && !this.hiddenByIO) {
         this.time += actualDt * this.state.speed;
         this.dirty = true;
       }
 
-      if (this.dirty) {
+      if (this.dirty && !this.hiddenByIO) {
+        const t0 = performance.now();
         this.renderFrame();
+        const renderMs = performance.now() - t0;
         this.dirty = false;
         this.lastFrameTime = ts;
+
+        // Adaptive quality: EMA of render time (α=0.1)
+        this.frameEma = this.frameEma * 0.9 + renderMs * 0.1;
+        if (this.qualCooldown > 0) this.qualCooldown--;
+        else this.adaptQuality();
+
         this.onFrame?.(1000 / actualDt, `${this.state.targetFps}fps cap`);
       }
     }
 
     this.raf = requestAnimationFrame(ts => this.loop(ts));
+  }
+
+  private adaptQuality() {
+    const s = this.state;
+    const TIERS = [32, 48, 64, 80, 96, 112, 128];
+    const idx = TIERS.indexOf(Math.max(32, Math.min(128, s.meshDetail)));
+
+    if (this.frameEma > 28 && idx > 0) {
+      // Drop one tier — frame time too high
+      s.meshDetail = TIERS[idx - 1];
+      this.buildMeshVao();
+      this.qualCooldown = 120; // wait 2s at 60fps before next change
+    } else if (this.frameEma < 14 && idx < TIERS.length - 1) {
+      // Tier up — plenty of headroom
+      s.meshDetail = TIERS[idx + 1];
+      this.buildMeshVao();
+      this.qualCooldown = 300;
+    }
+  }
+
+  /** Wire IntersectionObserver so the loop pauses when the canvas is off-screen. */
+  watchVisibility(canvas: HTMLCanvasElement) {
+    if (!('IntersectionObserver' in window)) return;
+    const io = new IntersectionObserver(([entry]) => {
+      this.hiddenByIO = !entry.isIntersecting;
+      if (!this.hiddenByIO) this.markDirty();
+    }, { rootMargin: '100px' });
+    io.observe(canvas);
   }
 
   markDirty() { this.dirty = true; this.pvDirty = true; this.lastFrameTime = performance.now(); }

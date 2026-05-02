@@ -4,6 +4,7 @@ import { ControlPanel } from './ui/ControlPanel';
 import { DEFAULT_STATE, cloneState, serializeState, deserializeState } from './state/GradientState';
 import type { GradientState, ColorStop } from './state/GradientState';
 import { PRESETS } from './state/presets';
+import { genCSS, genNextJs, genReact, genVanilla, genWebComponent, genMediaInstructions } from './export/templates';
 
 // ── Custom Preset Store ────────────────────────────────────────────────────────
 
@@ -79,6 +80,7 @@ function init() {
   };
 
   engine.start();
+  engine.watchVisibility(canvas);
 
   // ── Reduced-motion banner ────────────────────────────────────────────────
   if (prefersReduced) {
@@ -329,7 +331,9 @@ function savePreset() {
   });
 }
 
-// ── Export Modal (Phase 5 stub — currently shows live CSS + PNG) ──────────────
+// ── Export Modal ──────────────────────────────────────────────────────────────
+
+type TabKey = 'CSS' | 'Next.js' | 'React' | 'Vanilla HTML' | 'Web Component' | 'Media';
 
 function openExportModal() {
   const s = engine.state;
@@ -344,53 +348,83 @@ function openExportModal() {
   title.className = 'modal-title';
   title.textContent = '↓ Export';
 
-  // Tab bar
-  const tabs = ['CSS', 'Next.js', 'Vanilla HTML', 'Web Component', 'Media'] as const;
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'modal-close-btn';
+  closeBtn.textContent = '✕';
+  closeBtn.onclick = () => overlay.remove();
+
+  const tabs: TabKey[] = ['CSS', 'Next.js', 'React', 'Vanilla HTML', 'Web Component', 'Media'];
   const tabBar = document.createElement('div');
   tabBar.className = 'modal-tabs';
 
   const contentArea = document.createElement('div');
   contentArea.className = 'modal-tab-content';
 
-  const _activeTab: typeof tabs[number][] = ['CSS'];
-  const tabBtns: Record<string, HTMLButtonElement> = {};
+  const tabBtns: Record<TabKey, HTMLButtonElement> = {} as Record<TabKey, HTMLButtonElement>;
 
-  const renderTab = (tab: typeof tabs[number]) => {
-    _activeTab[0] = tab;
+  const renderTab = (tab: TabKey) => {
     contentArea.textContent = '';
     for (const [k, b] of Object.entries(tabBtns)) b.classList.toggle('active', k === tab);
 
-    const pre = document.createElement('pre');
-    pre.className = 'modal-code';
+    const addCode = (code: string, label = 'Copy') => {
+      const btn = document.createElement('button');
+      btn.className = 'modal-copy-btn';
+      btn.textContent = label;
+      btn.onclick = () => {
+        navigator.clipboard.writeText(code).then(() => {
+          btn.textContent = 'Copied!';
+          setTimeout(() => btn.textContent = label, 2000);
+        });
+      };
+      const pre = document.createElement('pre');
+      pre.className = 'modal-code';
+      pre.textContent = code;
+      contentArea.appendChild(btn);
+      contentArea.appendChild(pre);
+    };
+
+    const addNote = (text: string) => {
+      const p = document.createElement('p');
+      p.className = 'modal-note';
+      p.textContent = text;
+      contentArea.appendChild(p);
+    };
 
     if (tab === 'CSS') {
-      const layers = s.colors.map((c, i) => {
-        const angle = (i / s.colors.length) * 360;
-        const xPct  = Math.round(50 + 35 * Math.cos(angle * Math.PI / 180));
-        const yPct  = Math.round(50 + 35 * Math.sin(angle * Math.PI / 180));
-        return `radial-gradient(circle at ${xPct}% ${yPct}%, ${c.hex}${alphaToHex(c.alpha)}, transparent 60%)`;
-      });
-      const css = `/* Mesh Gradient — MeshStudio */\nbackground: ${s.bgColor};\nbackground-image:\n  ${layers.join(',\n  ')};`;
-      pre.textContent = css;
-      addCopyBtn(contentArea, css);
+      addNote('Static CSS approximation — no JavaScript, no animation. Good as a fallback background.');
+      addCode(genCSS(s));
     } else if (tab === 'Next.js') {
-      const code = genNextJs(s);
-      pre.textContent = code;
-      addCopyBtn(contentArea, code);
+      addNote('Next.js App Router component. Copy MeshGradient.tsx + MeshGradientLoader.tsx into your project.');
+      const { component, loader, readme } = genNextJs(s);
+      addCode(component, 'Copy MeshGradient.tsx');
+      addCode(loader,    'Copy MeshGradientLoader.tsx');
+      addCode(readme,    'Copy README-nextjs.md');
+    } else if (tab === 'React') {
+      addNote('Generic React component for Vite / CRA / any React 18+ project.');
+      const { component, readme } = genReact(s);
+      addCode(component, 'Copy MeshGradient.tsx');
+      addCode(readme,    'Copy README-react.md');
     } else if (tab === 'Vanilla HTML') {
-      const code = genVanilla(s);
-      pre.textContent = code;
-      addCopyBtn(contentArea, code);
+      addNote('Drop-in HTML file with CSS fallback. Copy mesh-gradient-runtime.js alongside it.');
+      addCode(genVanilla(s));
     } else if (tab === 'Web Component') {
-      const note = document.createElement('p');
-      note.className = 'modal-note';
-      note.textContent = 'Full Web Component export is coming in the next update. Use Vanilla HTML for now.';
-      contentArea.appendChild(note);
+      addNote('Framework-agnostic custom element: <mesh-gradient speed="1">. Copy alongside runtime.');
+      addCode(genWebComponent(s));
     } else {
-      addMediaExport(contentArea);
+      addNote(genMediaInstructions());
+      const pngBtn = document.createElement('button');
+      pngBtn.className = 'toolbar-btn primary';
+      pngBtn.textContent = '↓ Export PNG';
+      pngBtn.onclick = () => { overlay.remove(); document.getElementById('btn-export-png')!.click(); };
+      const webmBtn = document.createElement('button');
+      webmBtn.className = 'toolbar-btn';
+      webmBtn.textContent = '⏺ Record WebM';
+      webmBtn.onclick = () => { overlay.remove(); document.getElementById('btn-record')!.click(); };
+      const row = document.createElement('div');
+      row.className = 'modal-media-row';
+      row.appendChild(pngBtn); row.appendChild(webmBtn);
+      contentArea.appendChild(row);
     }
-
-    contentArea.appendChild(pre);
   };
 
   for (const tab of tabs) {
@@ -402,11 +436,6 @@ function openExportModal() {
     tabBtns[tab] = btn;
   }
 
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'modal-close-btn';
-  closeBtn.textContent = '✕';
-  closeBtn.onclick = () => overlay.remove();
-
   box.appendChild(title);
   box.appendChild(closeBtn);
   box.appendChild(tabBar);
@@ -415,113 +444,7 @@ function openExportModal() {
   document.body.appendChild(overlay);
 
   overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
-
   renderTab('CSS');
-}
-
-function alphaToHex(a: number): string {
-  if (a >= 1) return '';
-  return Math.round(a * 255).toString(16).padStart(2, '0');
-}
-
-function addCopyBtn(parent: HTMLElement, text: string) {
-  const btn = document.createElement('button');
-  btn.className = 'modal-copy-btn';
-  btn.textContent = 'Copy';
-  btn.onclick = () => {
-    navigator.clipboard.writeText(text).then(() => { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000); });
-  };
-  parent.appendChild(btn);
-}
-
-function addMediaExport(parent: HTMLElement) {
-  const note = document.createElement('p');
-  note.className = 'modal-note';
-  note.textContent = 'Use the toolbar buttons to export PNG or record WebM video.';
-  parent.appendChild(note);
-
-  const pngBtn = document.createElement('button');
-  pngBtn.className = 'toolbar-btn primary';
-  pngBtn.textContent = '↓ Export PNG';
-  pngBtn.onclick = () => document.getElementById('btn-export-png')!.click();
-
-  const webmBtn = document.createElement('button');
-  webmBtn.className = 'toolbar-btn';
-  webmBtn.textContent = '⏺ Record WebM';
-  webmBtn.onclick = () => document.getElementById('btn-record')!.click();
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'modal-media-row';
-  btnRow.appendChild(pngBtn);
-  btnRow.appendChild(webmBtn);
-  parent.appendChild(btnRow);
-}
-
-function genNextJs(s: GradientState): string {
-  const stateJson = JSON.stringify({
-    colors: s.colors, renderMode: s.renderMode, material: s.material,
-    motionMode: s.motionMode, speed: s.speed, seed: s.seed,
-    bgColor: s.bgColor, grain: s.grain, glowAmount: s.glowAmount,
-  }, null, 2);
-  return `'use client';
-// MeshGradient.tsx — generated by MeshStudio
-// npm install (no extra deps — self-contained WebGL2 runtime)
-// Add to your layout: <MeshGradient className="absolute inset-0 -z-10" />
-
-import { useEffect, useRef } from 'react';
-
-const STATE = ${stateJson};
-
-export default function MeshGradient({ className = '' }: { className?: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current!;
-    // TODO: import runtime and call mount(canvas, STATE)
-    // Full runtime will be generated in MeshStudio v2 export
-    canvas.style.background = '${s.bgColor}';
-  }, []);
-
-  return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden="true"
-      className={\`w-full h-full \${className}\`}
-    />
-  );
-}`;
-}
-
-function genVanilla(s: GradientState): string {
-  const layers = s.colors.map((c, i) => {
-    const angle = (i / s.colors.length) * 360;
-    const xPct  = Math.round(50 + 35 * Math.cos(angle * Math.PI / 180));
-    const yPct  = Math.round(50 + 35 * Math.sin(angle * Math.PI / 180));
-    return `  radial-gradient(circle at ${xPct}% ${yPct}%, ${c.hex}${alphaToHex(c.alpha)}, transparent 60%)`;
-  }).join(',\n');
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Mesh Gradient</title>
-  <style>
-    body { margin: 0; }
-    .mesh-gradient {
-      width: 100vw;
-      height: 100vh;
-      background: ${s.bgColor};
-      background-image:
-${layers};
-    }
-  </style>
-</head>
-<body>
-  <div class="mesh-gradient" aria-hidden="true"></div>
-  <!-- Full animated WebGL runtime: coming in MeshStudio v2 export -->
-</body>
-</html>`;
 }
 
 // ── Randomize ─────────────────────────────────────────────────────────────────
