@@ -82,6 +82,7 @@ vec3 iriPalette(float t){
 // ─────────────────────────────────────────────────────────────────────────────
 export const GRADIENT_VERT = `#version 300 es
 precision highp float;
+precision highp int;
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 uv;
@@ -184,6 +185,7 @@ void main(){
 // ─────────────────────────────────────────────────────────────────────────────
 export const GRADIENT_FRAG = `#version 300 es
 precision highp float;
+precision highp int;
 
 in vec2  v_worldXZ;
 in vec2  v_uv;
@@ -324,6 +326,7 @@ void main(){
 // ─────────────────────────────────────────────────────────────────────────────
 export const BLOBS_FRAG = `#version 300 es
 precision highp float;
+precision highp int;
 
 in vec2 v_uv;
 out vec4 fragColor;
@@ -555,6 +558,7 @@ void main(){
 // ─────────────────────────────────────────────────────────────────────────────
 export const WIRE_FRAG = `#version 300 es
 precision highp float;
+precision highp int;
 in vec2  v_worldXZ;
 in vec2  v_uv;
 in float v_alpha;

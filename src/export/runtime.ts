@@ -105,6 +105,7 @@ vec3 hsl2rgb(vec3 c){if(c.y<.0001)return vec3(c.z);float q=c.z<.5?c.z*(1.+c.y):c
 
 const VERT = `#version 300 es
 precision highp float;
+precision highp int;
 layout(location=0) in vec3 position;
 layout(location=1) in vec2 uv;
 uniform mat4 u_pv;
@@ -138,6 +139,7 @@ void main(){
 
 const FRAG = `#version 300 es
 precision highp float;
+precision highp int;
 in vec2 v_xz,v_uv; in float v_a,v_d;
 out vec4 fc;
 uniform float u_t,u_seed; uniform int u_mm,u_mat; uniform float u_mi,u_iri;
@@ -177,6 +179,7 @@ void main(){ v_uv=position*.5+.5; gl_Position=vec4(position,0.,1.); }`;
 
 const BLOBS_FRAG = `#version 300 es
 precision highp float;
+precision highp int;
 in vec2 v_uv; out vec4 fc;
 uniform float u_t,u_seed,u_mi; uniform int u_mm,u_mat;
 uniform vec4 u_colors[8]; uniform int u_cn;
