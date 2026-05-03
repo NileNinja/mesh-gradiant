@@ -1,4 +1,8 @@
 import type { GradientState, ColorStop } from '../state/GradientState';
+import runtimeSrc from './runtime.ts?raw';
+
+/** The full TypeScript source of the self-contained runtime. */
+export function genRuntime(): string { return runtimeSrc; }
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 

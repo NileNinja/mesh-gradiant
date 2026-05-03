@@ -4,7 +4,7 @@ import { ControlPanel } from './ui/ControlPanel';
 import { DEFAULT_STATE, cloneState, serializeState, deserializeState } from './state/GradientState';
 import type { GradientState, ColorStop } from './state/GradientState';
 import { PRESETS } from './state/presets';
-import { genCSS, genNextJs, genReact, genVanilla, genWebComponent, genMediaInstructions } from './export/templates';
+import { genCSS, genNextJs, genReact, genVanilla, genWebComponent, genMediaInstructions, genRuntime } from './export/templates';
 
 // ── Custom Preset Store ────────────────────────────────────────────────────────
 
@@ -366,21 +366,42 @@ function openExportModal() {
     contentArea.textContent = '';
     for (const [k, b] of Object.entries(tabBtns)) b.classList.toggle('active', k === tab);
 
-    const addCode = (code: string, label = 'Copy') => {
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    const addFile = (filename: string, code: string) => {
+      const header = document.createElement('div');
+      header.className = 'modal-file-header';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'modal-file-name';
+      nameSpan.textContent = filename;
+
       const btn = document.createElement('button');
       btn.className = 'modal-copy-btn';
-      btn.textContent = label;
+      btn.textContent = 'Copy';
       btn.onclick = () => {
         navigator.clipboard.writeText(code).then(() => {
           btn.textContent = 'Copied!';
-          setTimeout(() => btn.textContent = label, 2000);
+          setTimeout(() => btn.textContent = 'Copy', 2000);
         });
       };
+
+      header.appendChild(nameSpan);
+      header.appendChild(btn);
+
       const pre = document.createElement('pre');
       pre.className = 'modal-code';
       pre.textContent = code;
-      contentArea.appendChild(btn);
+
+      contentArea.appendChild(header);
       contentArea.appendChild(pre);
+    };
+
+    const addDivider = (label: string) => {
+      const d = document.createElement('div');
+      d.className = 'modal-section-divider';
+      d.textContent = label;
+      contentArea.appendChild(d);
     };
 
     const addNote = (text: string) => {
@@ -390,26 +411,43 @@ function openExportModal() {
       contentArea.appendChild(p);
     };
 
+    // ── Tab content ───────────────────────────────────────────────────────────
+
     if (tab === 'CSS') {
-      addNote('Static CSS approximation — no JavaScript, no animation. Good as a fallback background.');
-      addCode(genCSS(s));
+      addNote('Static CSS approximation — no JS, no animation. Drop directly into any stylesheet as a background fallback.');
+      addFile('mesh-gradient.css', genCSS(s));
+
     } else if (tab === 'Next.js') {
-      addNote('Next.js App Router component. Copy MeshGradient.tsx + MeshGradientLoader.tsx into your project.');
+      addNote('Next.js 14+ App Router. Copy all three files into your project, then import from MeshGradientLoader.');
       const { component, loader, readme } = genNextJs(s);
-      addCode(component, 'Copy MeshGradient.tsx');
-      addCode(loader,    'Copy MeshGradientLoader.tsx');
-      addCode(readme,    'Copy README-nextjs.md');
+      addFile('MeshGradient.tsx', component);
+      addFile('MeshGradientLoader.tsx', loader);
+      addDivider('── Required runtime (add once per project) ──');
+      addFile('mesh-gradient-runtime.ts', genRuntime());
+      addDivider('── Setup instructions ──');
+      addFile('README-nextjs.md', readme);
+
     } else if (tab === 'React') {
-      addNote('Generic React component for Vite / CRA / any React 18+ project.');
+      addNote('Works with any React 18+ project (Vite, CRA, Remix, etc.).');
       const { component, readme } = genReact(s);
-      addCode(component, 'Copy MeshGradient.tsx');
-      addCode(readme,    'Copy README-react.md');
+      addFile('MeshGradient.tsx', component);
+      addDivider('── Required runtime (add once per project) ──');
+      addFile('mesh-gradient-runtime.ts', genRuntime());
+      addDivider('── Setup instructions ──');
+      addFile('README-react.md', readme);
+
     } else if (tab === 'Vanilla HTML') {
-      addNote('Drop-in HTML file with CSS fallback. Copy mesh-gradient-runtime.js alongside it.');
-      addCode(genVanilla(s));
+      addNote('Self-contained HTML with a CSS fallback for no-WebGL environments. Place mesh-gradient-runtime.js in the same folder.');
+      addFile('index.html', genVanilla(s));
+      addDivider('── Required runtime (add once per project) ──');
+      addFile('mesh-gradient-runtime.ts', genRuntime());
+
     } else if (tab === 'Web Component') {
-      addNote('Framework-agnostic custom element: <mesh-gradient speed="1">. Copy alongside runtime.');
-      addCode(genWebComponent(s));
+      addNote('Framework-agnostic custom element — works in plain HTML, Vue, Angular, Svelte, or any framework. Place alongside the runtime.');
+      addFile('mesh-gradient.js', genWebComponent(s));
+      addDivider('── Required runtime (add once per project) ──');
+      addFile('mesh-gradient-runtime.ts', genRuntime());
+
     } else {
       addNote(genMediaInstructions());
       const pngBtn = document.createElement('button');
